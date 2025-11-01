@@ -66,24 +66,34 @@
 **  Private Constants
 **  -----------------
 */
-//#define ListSize           5000
-#define ListSize           7500
-#define FrameTime          100000
-#define FramesPerSecond    (1000000 / FrameTime)
-#define MAXBUFFERS 10
-#define MAXFONTS 3
-#define MAXGLYPHS 256
-#define GAMMA 2.2   /* The normal standard sRGB gamma value */
-#define FontNdxSmall 0
-#define FontNdxMedium 1
-#define FontNdxLarge 2
-#define DPI 75.0
+#define ListSize         10000
+#define FrameTime        100000
+#define FramesPerSecond  (1000000 / FrameTime)
+#define MaxX             0777
+#define MaxY             0777
+#define MAXBUFFERS       10
+#define MAXFONTS         3
+#define MAXGLYPHS        256
+#define GAMMA            2.2   /* The normal standard sRGB gamma value */
+#define FontNdxSmall     0
+#define FontNdxMedium    1
+#define FontNdxLarge     2
+#define DPI              75.0
+#define MaxPline         255
 
 /*
 **  -----------------------
 **  Private Macro Functions
 **  -----------------------
 */
+
+#ifndef WAYDEBUG
+#ifdef _DEBUG
+#define WAYDEBUG 1
+#else
+#define WAYDEBUG 0
+#endif
+#endif
 
 /*
 **  -----------------------------------------
@@ -227,10 +237,10 @@ typedef struct wlClientState
     DtCyberFont *currFont;
     int currFontNdx;
     FT_Library library;
-    FT_Face    face;
     /* Frame buffer proxessing */
     WlContentBuffer buffers[MAXBUFFERS];
     int maxBuffers;
+    u16 offsetMapY[MaxY+1];
     } WlClientState;
 
 /*
@@ -238,6 +248,10 @@ typedef struct wlClientState
 **  Private Function Prototypes
 **  ---------------------------
 */
+
+/*--------------------------------------------------------------------------
+**  Purpose:        Main windows handline loopthread.
+**------------------------------------------------------------------------*/
 void *windowThread(void *param);
 
 /*--------------------------------------------------------------------------
@@ -276,14 +290,52 @@ static u8              clipToKeyboardDelay  = 0;
 static int             usageDisplayCount = 0;
 static bool            isMeta;
 static WlClientState   state;
+static int             debugWayland = WAYDEBUG;
 
-/*
- **--------------------------------------------------------------------------
- **
- **  Public Functions
- **
- **--------------------------------------------------------------------------
- */
+/*--------------------------------------------------------------------------
+**  Pointer support constants
+**------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------
+**  An event bit mask definition tracking which pointer events have occurred
+**  in this pointer frame.
+**------------------------------------------------------------------------*/
+enum pointerEventMask
+    {
+    POINTER_EVENT_ENTER = 1 << 0,
+    POINTER_EVENT_LEAVE = 1 << 1,
+    POINTER_EVENT_MOTION = 1 << 2,
+    POINTER_EVENT_BUTTON = 1 << 3,
+    POINTER_EVENT_AXIS = 1 << 4,
+    POINTER_EVENT_AXIS_SOURCE = 1 << 5,
+    POINTER_EVENT_AXIS_STOP = 1 << 6,
+    POINTER_EVENT_AXIS_DISCRETE = 1 << 7,
+    };
+uint32_t axis_events = POINTER_EVENT_AXIS
+    | POINTER_EVENT_AXIS_SOURCE
+    | POINTER_EVENT_AXIS_STOP
+    | POINTER_EVENT_AXIS_DISCRETE;
+
+/*--------------------------------------------------------------------------
+**  Code translation strings for debug printing.
+**------------------------------------------------------------------------*/
+char *axis_name[2] =
+    {
+    [WL_POINTER_AXIS_VERTICAL_SCROLL] = "vertical",
+    [WL_POINTER_AXIS_HORIZONTAL_SCROLL] = "horizontal",
+    };
+char *axis_source[4] =
+    {
+    [WL_POINTER_AXIS_SOURCE_WHEEL] = "wheel",
+    [WL_POINTER_AXIS_SOURCE_FINGER] = "finger",
+    [WL_POINTER_AXIS_SOURCE_CONTINUOUS] = "continuous",
+    [WL_POINTER_AXIS_SOURCE_WHEEL_TILT] = "wheel tilt",
+    };
+
+/*--------------------------------------------------------------------------
+**
+**  Public Functions
+**
+**------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------
 **  Purpose:        Create POSIX thread which will deal with all Wayland
@@ -373,29 +425,28 @@ void windowQueue(u8 ch)
     {
     DispList *elem;
 
-    if ((listEnd >= ListSize)
-        || (currentX == -1)
-        || (currentY == -1))
-        {
-        return;
-        }
-
     /*
     **  Protect display list.
     */
     pthread_mutex_lock(&mutexDisplay);
 
-    if (ch != 0)
+    if (!((listEnd >= ListSize)
+        || (currentX == -1)
+        || (currentY == -1)))
         {
-        elem           = display + listEnd++;
-        elem->ch       = ch;
-        elem->fontSize = currentFont;
-        elem->xPos     = currentX;
-        elem->yPos     = currentY;
+
+        if (ch != 0)
+            {
+            elem           = display + listEnd++;
+            elem->ch       = ch;
+            elem->fontSize = currentFont;
+            elem->xPos     = currentX;
+            elem->yPos     = currentY;
+            }
+
+        currentX += currentFont;
+
         }
-
-    currentX += currentFont;
-
     /*
     **  Release display list.
     */
@@ -426,6 +477,22 @@ void windowTerminate(void)
  **
  **--------------------------------------------------------------------------
  */
+
+/*--------------------------------------------------------------------------
+**  Shared memory support code.
+**------------------------------------------------------------------------*/
+void wayDebug(int level, char *file, int line, char *fmt, ...)
+    {
+    if ((debugWayland > 0) && (level <= debugWayland))
+        {
+        char pline[MaxPline] = "\0";
+        va_list param;
+        va_start(param, fmt);
+        vsnprintf(pline, MaxPline, fmt, param);
+        va_end(param);
+        logDtError(file, line, pline);
+        }
+    }
 
 /*--------------------------------------------------------------------------
 **  Shared memory support code.
@@ -551,7 +618,7 @@ findFontFile(const char *fontFamily, const double pointSize)
     FcPattern* pat = FcNameParse((FcChar8 *)fontFamily);
     if (!pat)
         {
-        fprintf(stderr, "Unable to parse the font family name.\n");
+        logDtError(LogErrorLocation, "Unable to parse the font family name.\n");
         return NULL;
         }
     FcPatternAddDouble(pat, FC_PIXEL_SIZE, pointSize);
@@ -573,7 +640,7 @@ findFontFile(const char *fontFamily, const double pointSize)
             FC_FONTFORMAT, FC_SIZE, FC_PIXEL_SIZE, FC_SPACING, (char *) 0);
         for (int i=0; fs && i < fs->nfont; ++i)
             {
-            fprintf(stderr, "Processing font number %d of %d\n", i, fs->nfont);
+            wayDebug(1, LogErrorLocation, "Processing font number %d of %d\n", i, fs->nfont);
             FcPattern* font = FcPatternFilter(fs->fonts[i], os);
             FcChar8 *file;
             FcResult res1;
@@ -582,43 +649,43 @@ findFontFile(const char *fontFamily, const double pointSize)
 
             if (FcPatternGetString(font, FC_FAMILY, 0, &file) == FcResultMatch)
                 {
-                fprintf(stderr, "  Font family name: %s\n", (char *)file);
+                wayDebug(1, LogErrorLocation, "  Font family name: %s\n", (char *)file);
                 }
             if (FcPatternGetString(font, FC_STYLE, 0, &file) == FcResultMatch)
                 {
-                fprintf(stderr, "  Font style: %s\n", (char *)file);
+                wayDebug(1, LogErrorLocation, "  Font style: %s\n", (char *)file);
                 }
             if (FcPatternGetString(font, FC_LANG, 0, &file) == FcResultMatch)
                 {
-                fprintf(stderr, "  Font language code: %s\n", (char *)file);
+                wayDebug(1, LogErrorLocation, "  Font language code: %s\n", (char *)file);
                 }
             if (FcPatternGetString(font, FC_FONTFORMAT, 0, &file) == FcResultMatch)
                 {
-                fprintf(stderr, "  Font format: %s\n", (char *)file);
+                wayDebug(1, LogErrorLocation, "  Font format: %s\n", (char *)file);
                 }
             if ((res1 = FcPatternGetDouble(font, FC_SIZE, 0, &size)) == FcResultMatch)
                 {
-                fprintf(stderr, "  Font point size: %f\n", size);
+                wayDebug(1, LogErrorLocation, "  Font point size: %f\n", size);
                 }
             else
                 {
-                fprintf(stderr, "  Attempt to get point size object returned %d\n", res1);
+                wayDebug(1, LogErrorLocation, "  Attempt to get point size object returned %d\n", res1);
                 }
             if ((res1 = FcPatternGetDouble(font, FC_PIXEL_SIZE, 0, &size)) == FcResultMatch)
                 {
-                fprintf(stderr, "  Font pixel size: %f\n", size);
+                wayDebug(1, LogErrorLocation, "  Font pixel size: %f\n", size);
                 }
             else
                 {
-                fprintf(stderr, "  Attempt to get pixel size object returned %d\n", res1);
+                wayDebug(1, LogErrorLocation, "  Attempt to get pixel size object returned %d\n", res1);
                 }
             if ((res1 = FcPatternGetInteger(font, FC_SPACING, 0, &spacing)) == FcResultMatch)
                 {
-                fprintf(stderr, "  Font spacing: %d\n", spacing);
+                wayDebug(1, LogErrorLocation, "  Font spacing: %d\n", spacing);
                 }
             else
                 {
-                fprintf(stderr, "  Attempt to get spacing object returned %d\n", res1);
+                wayDebug(1, LogErrorLocation, "  Attempt to get spacing object returned %d\n", res1);
                 }
             if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch)
                 {
@@ -626,9 +693,9 @@ findFontFile(const char *fontFamily, const double pointSize)
                 ** When we destroy the font set below we loose the file path memory
                 ** so we need to allocate a new structure and copy here
                 **------------------------------------------------------------------*/
-                char *tmp = calloc(sizeof(char), strlen((char *)file));
+                char *tmp = calloc(sizeof(char), strlen((char *)file)+1);
                 filePath = strcpy(tmp, (char *)file);
-                fprintf(stderr, "  Font file location: %s\n", filePath);
+                wayDebug(1, LogErrorLocation, "  Font file location: %s\n", filePath);
                 }
             FcPatternDestroy(font);
             }
@@ -636,7 +703,7 @@ findFontFile(const char *fontFamily, const double pointSize)
         }
     else
         {
-        fprintf(stderr, "  Attempt to locate font file returned %d\n", res);
+        logDtError(LogErrorLocation, "  Attempt to locate font file returned %d\n", res);
         filePath = NULL;
         }
     FcPatternDestroy(pat2);
@@ -949,8 +1016,8 @@ static const struct wl_buffer_listener wlBufferListener = {
 **  Parameters:     Name        Description.
 **                  width       The row width of the buffer structure in
 **                              pixels.
-**                  height      Thenumber of pixel rows to allocate.
-**                  data        Client state data pointer handed back to us.
+**                  height      The number of pixel rows to allocate.
+**                  state       Client state data pointer.
 **
 **  Returns:        The size in bytes of the shared memory segement for a
 **                  pixel buffer. Note: width and height are explicitly
@@ -964,6 +1031,35 @@ calculatePixelBufferSize(int width, int height, WlClientState *state)
     {
     int size = (width * height * sizeof(PixelARGB)); size = ((size / state->pageSize) + 1) * state->pageSize;
     return size;
+    }
+
+/*--------------------------------------------------------------------------
+**  Purpose:        Frame buffer handling functions.
+**                  Calculate and populate the Y co-ordinate mapping
+**                  table used to translate the 6612 / CC545 console
+**                  co-ordinate to the real window size in use.
+**
+**  Parameters:     Name        Description.
+**                  state       Client state data pointer.
+**
+**  Returns:        Nothing. The offset mapping table in the client state 
+**                  object is populated with non-zero values.
+**
+**------------------------------------------------------------------------*/
+void
+populateYOffsetMap(WlClientState *state)
+    {
+    float factor = (state->height * 1.0) / (MaxY * 1.0);
+    for(int y = 0; y <= MaxY; y++)
+        {
+        state->offsetMapY[y] = (u16)(roundf(factor * (y * 1.0)));
+        if ((y < 11) || (y >= (MaxY - 10)))
+            {
+            wayDebug(1, LogErrorLocation, "Populated mapping for line = %d as %d.\n",
+            y, state->offsetMapY[y]);
+            }
+        }
+    return;
     }
 
 /*--------------------------------------------------------------------------
@@ -991,7 +1087,7 @@ createCachedFrameBuffer(int index, WlClientState *state)
     int fd = allocateShmFile(size);
     if (fd == -1)
         {
-        fprintf(stderr, "createCachedFrameBuffer allocate shm file creation failed.\n");
+        logDtError(LogErrorLocation, "createCachedFrameBuffer allocate shm file creation failed.\n");
         return -1;
         }
 
@@ -1000,29 +1096,29 @@ createCachedFrameBuffer(int index, WlClientState *state)
     **------------------------------------------------------------------------*/
     struct wl_shm_pool *pool = wl_shm_create_pool(state->wlShm, fd, size);
 
-    //fprintf(stderr, "createCachedFrameBuffer Creating a new frame buffer in slot %d "
-    //        "of size %d at offset 0.\n", index, size);
+    wayDebug(2, LogErrorLocation, "createCachedFrameBuffer Creating a new frame buffer in slot %d "
+            "of size %d at offset 0.\n", index, size);
     state->buffers[index].framePixels = mmap(NULL, size, PROT_READ | PROT_WRITE,
          MAP_SHARED, fd, 0);
     if (state->buffers[index].framePixels == MAP_FAILED)
         {
-        //fprintf(stderr, "createCachedFrameBuffer unable to mmap the shm frame buffer,"
-        //        " errno = %d aborting.\n", errno);
+        logDtError(LogErrorLocation, "createCachedFrameBuffer unable to mmap the shm frame buffer,"
+                " errno = %d aborting.\n", errno);
         state->buffers[index].framePixels = NULL;
         state->buffers[index].frameBuffer = NULL;
         state->buffers[index].frameBufferAvailable = true;
         return -1;
         }
     state->buffers[index].pixelBufferSize = size;
-    //fprintf(stderr, "createCachedFrameBuffer pixel buffer located at address 0x%x\n",
-    //    state->buffers[index].framePixels);
+    wayDebug(2, LogErrorLocation, "createCachedFrameBuffer pixel buffer located at address 0x%x\n",
+        state->buffers[index].framePixels);
 
-    //fprintf(stderr, "createCachedFrameBuffer now create the buffer structure\n");
+    wayDebug(2, LogErrorLocation, "createCachedFrameBuffer now create the buffer structure\n");
     state->buffers[index].frameBuffer = wl_shm_pool_create_buffer(pool,
          0, width, height, stride, WL_SHM_FORMAT_ARGB8888);
     wl_buffer_add_listener(state->buffers[index].frameBuffer, &wlBufferListener, state);
 
-    //fprintf(stderr, "createCacheFrameBuffer removing shm pool and closing fd.\n");
+    wayDebug(2, LogErrorLocation, "createCacheFrameBuffer removing shm pool and closing fd.\n");
     wl_shm_pool_destroy(pool);
     close(fd);
 
@@ -1050,7 +1146,7 @@ wlDisplayError(void *data, struct wl_display *wlDisplay, void *objectId,
     {
     WlClientState *state = data;
 
-    fprintf(stderr, "Display error: %s\n", message);
+    logDtError(LogErrorLocation, "Display error: %s\n", message);
     }
 
 /*--------------------------------------------------------------------------
@@ -1071,7 +1167,7 @@ wlDisplayDeleteId(void *data, struct wl_display *wlDisplay, uint32_t id)
     {
     WlClientState *state = data;
 
-    fprintf(stderr, "Display delete identifier for id %d\n", id);
+    wayDebug(1, LogErrorLocation, "Display delete identifier for id %d\n", id);
     }
 
 /*--------------------------------------------------------------------------
@@ -1107,7 +1203,7 @@ static void wlDataOfferHandleOffer(void *data, struct wl_data_offer *offer,
         {
         state->ddOfferedTextPlain = true;
         }
-	fprintf(stderr, "Clipboard supports MIME type: %s\n", mime_type);
+	wayDebug(1, LogErrorLocation, "Clipboard supports MIME type: %s\n", mime_type);
     }
 
 /*--------------------------------------------------------------------------
@@ -1140,7 +1236,7 @@ static void wlDataDeviceHandleDataOffer(void *data,
         struct wl_data_offer *offer)
     {
     WlClientState *state = data;
-    fprintf(stderr, "Received a data offer event.\n");
+    wayDebug(1, LogErrorLocation, "Received a data offer event.\n");
 	wl_data_offer_add_listener(offer, &wlDataOfferListener, state);
     }
 
@@ -1208,14 +1304,14 @@ static void wlDataDeviceHandleSelection(void *data,
             **  Cleanup and release the data offer.
             **------------------------------------------------------------------------*/
             wl_data_offer_destroy(offer);
-            fprintf(stderr, "Destroyed data offer.\n");
+            wayDebug(1, LogErrorLocation, "Destroyed data offer.\n");
         }
     else
         {
         /*--------------------------------------------------------------------------
         **  The clipboard was cleared and contains no data.
         **------------------------------------------------------------------------*/
-	    fprintf(stderr, "Clipboard is empty\n");
+	    wayDebug(1, LogErrorLocation, "Clipboard is empty\n");
         }
 
     /*--------------------------------------------------------------------------
@@ -1279,24 +1375,24 @@ resizeBuffers(WlClientState *state)
         {
         state->pendingWidth = 0;
         state->pendingHeight = 0;
-        fprintf(stderr, "Resize request to exactly the same size, ignoring.\n");
+        wayDebug(1, LogErrorLocation, "Resize request to exactly the same size, ignoring.\n");
         return;
         }
 
     /*----------------------------------------------------------------------
     **  Delete all currently created and available frame buffers
     **--------------------------------------------------------------------*/
-    //fprintf(stderr, "resizeBuffers about to remove current and available buffers.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers about to remove current and available buffers.\n");
     for (int n = 0; n < state->maxBuffers; n++)
         {
         if ((state->buffers[n].frameBuffer != NULL) &&
             (state->buffers[n].framePixels != NULL)  &&
             (state->buffers[n].frameBufferAvailable))
             {
-            fprintf(stderr, "Destroying the frame buffer for slot %d\n", n);
+            wayDebug(2, LogErrorLocation, "Destroying the frame buffer for slot %d\n", n);
             wl_buffer_destroy(state->buffers[n].frameBuffer);
             state->buffers[n].frameBuffer = NULL;
-            fprintf(stderr, "Unmapping the pixel buffer for buffer %d\n", n);
+            wayDebug(2, LogErrorLocation, "Unmapping the pixel buffer for buffer %d\n", n);
             munmap(state->buffers[n].framePixels, state->pixelBufferSize);
             state->buffers[n].framePixels = NULL;
             state->buffers[n].pixelBufferSize = 0;
@@ -1307,7 +1403,7 @@ resizeBuffers(WlClientState *state)
     /*----------------------------------------------------------------------
     **  Calculate the required new pixel buffer size.
     **--------------------------------------------------------------------*/
-    //fprintf(stderr, "resizeBuffers about to create pixel buffer size.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers about to create pixel buffer size.\n");
     state->pixelBufferSize = calculatePixelBufferSize(state->pendingWidth,
             state->pendingHeight, state);
 
@@ -1316,7 +1412,7 @@ resizeBuffers(WlClientState *state)
     **  and copy over the appropriate parts of the existing image buffer.
     **  Then release the old image buffer.
     **--------------------------------------------------------------------*/
-    //fprintf(stderr, "resizeBuffers about to create new image buffer.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers about to create new image buffer.\n");
     PixelARGB pix;
     pix.alpha = 255;
     pix.red = 0;
@@ -1328,13 +1424,13 @@ resizeBuffers(WlClientState *state)
             sizeof(PixelARGB));
     if (image == NULL)
     {
-        fprintf(stderr, "resizeBuffers Unable to allocate new image buffer of %d x %d pixels.\n",
+        logDtError(LogErrorLocation, "resizeBuffers Unable to allocate new image buffer of %d x %d pixels.\n",
             state->pendingWidth, state->pendingHeight);
         exit(1);
     }
-    //fprintf(stderr, "resizeBuffers new image size is %d bytes.\n", imageSize);
+    wayDebug(2, LogErrorLocation, "resizeBuffers new image size is %d bytes.\n", imageSize);
 
-    //fprintf(stderr, "resizeBuffers about to set background black.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers about to set background black.\n");
     for (int y = 0; y < state->pendingHeight; ++y)
         {
         for (int x = 0; x < state->pendingWidth; ++x)
@@ -1343,7 +1439,7 @@ resizeBuffers(WlClientState *state)
             }
         }
 
-    //fprintf(stderr, "resizeBuffers completed setting background, about to copy in old image.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers completed setting background, about to copy in old image.\n");
     for (int y = 0; y < MIN(state->height, state->pendingHeight); ++y)
         {
         for (int x = 0; x < MIN(state->width, state->pendingWidth); ++x)
@@ -1351,9 +1447,9 @@ resizeBuffers(WlClientState *state)
             image[(y * state->pendingWidth) + x] = state->image[(y * state->width) + x];
             }
         }
-    //fprintf(stderr, "resizeBuffers completed copying in old image.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers completed copying in old image.\n");
 
-    //fprintf(stderr, "resizeBuffers freeing the existing image buffer space.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers freeing the existing image buffer space.\n");
     free((void *)state->image);
     state->image = image;
     state->imageSize = imageSize;
@@ -1361,7 +1457,7 @@ resizeBuffers(WlClientState *state)
     state->height = state->pendingHeight;
     state->pendingWidth = 0;
     state->pendingHeight = 0;
-    //fprintf(stderr, "resizeBuffers processing complete, returning.\n");
+    wayDebug(2, LogErrorLocation, "resizeBuffers processing complete, returning.\n");
     }
 
 /*--------------------------------------------------------------------------
@@ -1390,7 +1486,7 @@ drawPoint(WlClientState *state, FT_Vector pen)
 
     x = (pen.x >> 6);
     y = (pen.y >> 6);
-    logDtError(LogErrorLocation, "Drawing point at pen position x = %d, y = %d.\n",
+    wayDebug(3, LogErrorLocation, "Drawing point at pen position x = %d, y = %d.\n",
         x, y);
 
     /*--------------------------------------------------------------------------
@@ -1401,8 +1497,8 @@ drawPoint(WlClientState *state, FT_Vector pen)
          x >= state->width ||
          y >= state->height )
         {
-        //fprintf(stderr, "Skipping off screen pixel, width = %d, height = %d, i = %d, j = %d.\n",
-        //    state->width, state->height, i, j);
+        wayDebug(3, LogErrorLocation, "Skipping off screen pixel, x = %d, y = %d.\n",
+            x, y);
         return;
         }
 
@@ -1452,13 +1548,13 @@ drawCharacter(WlClientState *state, uint32_t character, FT_Vector pen,
             error = FT_Get_Glyph(font->face->glyph, &font->glyphCache[character]);
             if (error != FT_Err_Ok) return newPen;
             tmpGlyph = font->glyphCache[character];
-            //fprintf(stderr, "drawCharacter caching a new glyph for '%x'\n",
-            //    keyPress);
+            wayDebug(3, LogErrorLocation, "drawCharacter caching a new glyph for '%x'\n",
+                character);
             }
             else
             {
-            //fprintf(stderr, "drawCharacter reusing cached glyph for '%x'\n",
-            //    keyPress);
+            wayDebug(3, LogErrorLocation, "drawCharacter reusing cached glyph for '%x'\n",
+                character);
             }
         }
     else
@@ -1471,7 +1567,7 @@ drawCharacter(WlClientState *state, uint32_t character, FT_Vector pen,
 
     if (tmpGlyph->format != FT_GLYPH_FORMAT_BITMAP)
         {
-        fprintf(stderr, "Glyph is not bitmap format for character %d.\n", character);
+        wayDebug(1, LogErrorLocation, "Glyph is not bitmap format for character %d.\n", character);
         return newPen;
         }
 
@@ -1492,13 +1588,13 @@ drawCharacter(WlClientState *state, uint32_t character, FT_Vector pen,
     **------------------------------------------------------------------------*/
 
     FT_BitmapGlyph bmGlyph = (FT_BitmapGlyph)tmpGlyph;
-    //fprintf(stderr, "drawCharacter processing bitmap glyph for keypress '%x'\n",
-    //    keyPress);
+    wayDebug(3, LogErrorLocation, "drawCharacter processing bitmap glyph for keypress '%x'\n",
+        character);
 
-    x = (pen.x / 64) + bmGlyph->left;
+    x = (pen.x >> 6) + bmGlyph->left;
     if (bmGlyph->top < 0)
         {
-        y = (pen.y / 64) - bmGlyph->top;
+        y = (pen.y >> 6) - bmGlyph->top;
         }
     else
         {
@@ -1506,15 +1602,15 @@ drawCharacter(WlClientState *state, uint32_t character, FT_Vector pen,
         ** Old X11 bitmap fonts appear to have positive bitmap top values here.
         **  We have to position the bitmap correctly in the bounding box.
         **------------------------------------------------------------------------*/
-        y = (pen.y / 64) +
-            ((fontSize->metrics.height / 64) - bmGlyph->top);
+        y = (pen.y >> 6) +
+            ((fontSize->metrics.height >> 6) - bmGlyph->top);
         }
     x_max = x + bmGlyph->bitmap.width;
     y_max = y + bmGlyph->bitmap.rows;
-    //fprintf(stderr, "Writing character at pen position x = %d, y = %d.\n",
-    //    x, y);
-    //fprintf(stderr, "Bitmap bearing is: bitmap_left = %d bitmap_top = %d.\n",
-    //    slot->bitmap_left, slot->bitmap_top);
+    wayDebug(3, LogErrorLocation, "Writing character at pen position x = %d, y = %d.\n",
+        x, y);
+    wayDebug(3, LogErrorLocation, "Bitmap bearing is: left = %d top = %d.\n",
+        bmGlyph->left, bmGlyph->top);
 
     /*--------------------------------------------------------------------------
     ** for simplicity, we assume that 'bitmap->pixel_mode'
@@ -1550,17 +1646,18 @@ drawCharacter(WlClientState *state, uint32_t character, FT_Vector pen,
         }
     else if (bmGlyph->bitmap.pixel_mode == FT_PIXEL_MODE_MONO)
         {
-        //fprintf(stderr, "Monochrome bitmap, rows = %d, width = %d, pitch = %d.\n",
-        //    slot->bitmap.rows, slot->bitmap.width, slot->bitmap.pitch);
+        wayDebug(3, LogErrorLocation, "Monochrome bitmap, rows = %d, width = %d, pitch = %d.\n",
+            bmGlyph->bitmap.rows, bmGlyph->bitmap.width, bmGlyph->bitmap.pitch);
         /*
-        fprintf(stderr, "Bitmap is:\n");
-        for (int b = 0; b < slot->bitmap.rows; b++)
+        wayDebug(3, LogErrorLocation, "Bitmap is:\n");
+        for (int b = 0; b < bmGlyph->bitmap.rows; b++)
             {
-            for (int a = 0; a < slot->bitmap.pitch; a++)
+            for (int a = 0; a < bmGlyph->bitmap.pitch; a++)
                 {
-                fprintf(stderr, " %#02x", slot->bitmap.buffer[(b * slot->bitmap.pitch) + a]);
+                wayDebug(3, LogErrorLocation, " %#02x",
+                    bmGlyph->bitmap.buffer[(b * bmGlyph->bitmap.pitch) + a]);
                 }
-            fprintf(stderr, "\n");
+            wayDebug(3, LogErrorLocation, "\n");
             }
         */
         uint8_t off;
@@ -1579,42 +1676,42 @@ drawCharacter(WlClientState *state, uint32_t character, FT_Vector pen,
                      i >= state->width ||
                      j >= state->height )
                     {
-                    //fprintf(stderr, "Skipping off screen pixel, width = %d, height = %d, i = %d, j = %d.\n",
-                    //    state->width, state->height, i, j);
+                    wayDebug(3, LogErrorLocation, "Skipping off screen pixel, width = %d, height = %d, i = %d, j = %d.\n",
+                        state->width, state->height, i, j);
                     return newPen;
                     }
 
-                //fprintf(stderr, "Bitmap loop 2 i = %d, j = %d, p = %d, q = %d\n",
-                //    i, j, p, q);
+                wayDebug(3, LogErrorLocation, "Bitmap loop 2 i = %d, j = %d, p = %d, q = %d\n",
+                    i, j, p, q);
                 off  = ((p * pitchBits) + q) / 8;
                 mask = (0x80 >> (q % 8));
-                //fprintf(stderr, "Bitmap loop 3 i = %d, j = %d, p = %d, q = %d\n",
-                //    i, j, p, q);
-                //fprintf(stderr, "Checking bitmap byte 0x%x at offset %d with mask 0x%x.\n",
-                //    slot->bitmap.buffer[off], off, mask);
-                //fprintf(stderr, "Bitmap bit at off = %d, mask = 0x%02x, is %d\n",
-                //    off, mask, (slot->bitmap.buffer[off] & mask));
+                wayDebug(3, LogErrorLocation, "Bitmap loop 3 i = %d, j = %d, p = %d, q = %d\n",
+                    i, j, p, q);
+                wayDebug(3, LogErrorLocation, "Checking bitmap byte 0x%x at offset %d with mask 0x%x.\n",
+                    bmGlyph->bitmap.buffer[off], off, mask);
+                wayDebug(3, LogErrorLocation, "Bitmap bit at off = %d, mask = 0x%02x, is %d\n",
+                    off, mask, (bmGlyph->bitmap.buffer[off] & mask));
                 if (bmGlyph->bitmap.buffer[off] & mask) 
                     {
-                    //fprintf(stderr, "Found 1 bit at p = %d, q = %d, off = %d.\n",
-                    //    p, q, off);
+                    wayDebug(3, LogErrorLocation, "Found 1 bit at p = %d, q = %d, off = %d.\n",
+                        p, q, off);
                     pix.green = 255;
                     }
                 else
                     {
-                    //fprintf(stderr, "Found 0 bit at p = %d, q = %d, off = %d.\n",
-                    //    p, q, off);
+                    wayDebug(3, LogErrorLocation, "Found 0 bit at p = %d, q = %d, off = %d.\n",
+                        p, q, off);
                     pix.green = 0;
                     }
-                //fprintf(stderr, "Setting image pixel at j = %d i = %d to green = %d\n",
-                //    j, i, pix.green);
+                wayDebug(3, LogErrorLocation, "Setting image pixel at j = %d i = %d to green = %d\n",
+                    j, i, pix.green);
                 state->image[j * state->width + i] = pix;
                 }
             }
         }
     else
         {
-        fprintf(stderr, "Bitmap pixel mode is 0x%x.\n",
+        wayDebug(3, LogErrorLocation, "Bitmap pixel mode is 0x%x.\n",
              bmGlyph->bitmap.pixel_mode);
         }
 
@@ -1627,15 +1724,15 @@ drawCharacter(WlClientState *state, uint32_t character, FT_Vector pen,
     **  convert to the 26.6 format of the pen position.
     **------------------------------------------------------------------------*/
 
-    //fprintf(stderr, "Character pen advance slot value = %d max = %d.\n",
-    //    bmGlyph->root.advance.x >> 16,
-    //    fontSize->metrics.max_advance / 64);
-    //fprintf(stderr, "Face metrics x_ppem = %d y_ppem = %d.\n",
-    //    state->face->size->metrics.x_ppem / 64,
-    //    state->face->size->metrics.y_ppem / 64);
+    wayDebug(3, LogErrorLocation, "Character pen advance value = %d max = %d.\n",
+        bmGlyph->root.advance.x >> 16,
+        fontSize->metrics.max_advance >> 6);
+    wayDebug(3, LogErrorLocation, "Face metrics x_ppem = %d y_ppem = %d.\n",
+        font->face->size->metrics.x_ppem >> 6,
+        font->face->size->metrics.y_ppem >> 6);
     newPen.x = pen.x + (bmGlyph->root.advance.x >> 10);
     newPen.y = pen.y;
-    if ((newPen.x / 64) >= state->width)
+    if ((newPen.x >> 6) >= state->width)
         {
         newPen.x = 0;
         newPen.y = pen.y + fontSize->metrics.height;
@@ -1719,18 +1816,19 @@ drawText(WlClientState *state)
     pix.green = 0;
     pix.blue = 0;
 
+    wayDebug(2, LogErrorLocation, "drawText entered with image at 0x%x\n", state->image);
     if (state->image == NULL)
         {
         int imageSize = width * height * sizeof(PixelARGB);
         state->image = calloc((width * height), sizeof(PixelARGB));
         if (state->image == NULL)
             {
-            fprintf(stderr, "Unable to allocate image buffer of %d x %d pixels.\n",
+            logDtError(LogErrorLocation, "Unable to allocate image buffer of %d x %d pixels.\n",
                 width, height);
             return;
             }
         state->imageSize = imageSize;
-        fprintf(stderr, "drawText created image buffer of %d bytes,\n",
+        wayDebug(2, LogErrorLocation, "drawText created image buffer of %d bytes,\n",
             state->imageSize);
 
         for (int y = 0; y < height; ++y)
@@ -1749,7 +1847,7 @@ drawText(WlClientState *state)
 
         sprintf(buf, "Cycle time: %.3f", cycleTime);
         pen.x = (0  <<6);
-        pen.y = (10 << 6);
+        pen.y = (state->offsetMapY[10] << 6);
         drawString(state, buf, strlen(buf), pen, &state->fonts[FontNdxSmall]);
         }
 #endif
@@ -1786,7 +1884,7 @@ drawText(WlClientState *state)
                 (traceMask >> 15) & 1 ? 'E' : '_');
 
         pen.x = (0  <<6);
-        pen.y = (10 << 6);
+        pen.y = (state->offsetMapY[10] << 6);
         drawString(state, buf, strlen(buf), pen, &state->fonts[FontNdxSmall]);
         }
 #endif
@@ -1798,7 +1896,7 @@ drawText(WlClientState *state)
             */
             static char opMessage[] = "Emulation paused";
             pen.x = (20  <<6);
-            pen.y = (256 << 6);
+            pen.y = (state->offsetMapY[256] << 6);
             drawString(state, opMessage, strlen(opMessage), pen, &state->fonts[FontNdxLarge]);
             }
         else if (consoleIsRemoteActive())
@@ -1808,7 +1906,7 @@ drawText(WlClientState *state)
             */
             static char opMessage[] = "Remote console active";
             pen.x = (20  <<6);
-            pen.y = (256 << 6);
+            pen.y = (state->offsetMapY[256] << 6);
             drawString(state, opMessage, strlen(opMessage), pen, &state->fonts[FontNdxLarge]);
             }
 
@@ -1821,10 +1919,10 @@ drawText(WlClientState *state)
             static char usageMessage1[] = "Please don't just close the window, but instead first cleanly halt the operating system and";
             static char usageMessage2[] = "then use the 'shutdown' command in the operator interface to terminate the emulation.";
             pen.x = (20  <<6);
-            pen.y = (256 << 6);
+            pen.y = (state->offsetMapY[256] << 6);
             drawString(state, usageMessage1, strlen(usageMessage1), pen, &state->fonts[FontNdxMedium]);
             pen.x = (20  <<6);
-            pen.y = (275 << 6);
+            pen.y = (state->offsetMapY[275] << 6);
             drawString(state, usageMessage2, strlen(usageMessage2), pen, &state->fonts[FontNdxMedium]);
             listEnd            = 0;
             if (usageDisplayCount > 0) usageDisplayCount -= 1;
@@ -1840,6 +1938,8 @@ drawText(WlClientState *state)
         curr = display;
         end  = display + listEnd;
 
+        wayDebug(2, LogErrorLocation, "drawText about to process the display list at 0x%x ending 0x%x\n",
+            curr, end);
         for (curr = display; curr < end; curr++)
             {
             /*
@@ -1848,6 +1948,7 @@ drawText(WlClientState *state)
             if (oldFont != curr->fontSize)
                 {
                 oldFont = curr->fontSize;
+                wayDebug(2, LogErrorLocation, "drawText switching to font size %d\n", curr->fontSize);
 
                 switch (oldFont)
                     {
@@ -1881,7 +1982,9 @@ drawText(WlClientState *state)
             **  Draw dot or character.
             */
             state->pen.x = curr->xPos << 6;
-            state->pen.y = ((curr->yPos * 14) / 10) << 6;
+            state->pen.y = state->offsetMapY[curr->yPos] << 6;
+            wayDebug(3, LogErrorLocation, "Drawing font %d at pen.x %d pen.y %d\n",
+                curr->fontSize, state->pen.x >> 6, state->pen.y >> 6);
             if (curr->fontSize == FontDot)
                 {
                 drawPoint(state, state->pen);
@@ -2054,7 +2157,7 @@ populateFrameBuffer(WlClientState *state)
     int n = findAvailableBuffer(state);
     if (n >= 0)
         {
-        //fprintf(stderr, "populateFrameBuffer Reusing the buffer in slot %d\n", n);
+        wayDebug(2, LogErrorLocation, "populateFrameBuffer Reusing the buffer in slot %d\n", n);
         memcpy(state->buffers[n].framePixels, state->image, state->imageSize);
         state->buffers[n].frameBufferAvailable = false;
         }
@@ -2063,26 +2166,26 @@ populateFrameBuffer(WlClientState *state)
         n = findEmptyBufferSlot(state);
         if (n >= 0)
             {
-            //fprintf(stderr, "populateFrameBuffer creating a new buffer in slot %d\n", n);
+            wayDebug(2, LogErrorLocation, "populateFrameBuffer creating a new buffer in slot %d\n", n);
             int success = createCachedFrameBuffer(n, state);
             if (success == 0)
                 {
-                //fprintf(stderr, "populateFrameBuffer copy the pixel image for %d bytes "
-                //    "from address 0x%x to address 0x%x\n", state->imageSize,
-                //    state->image, state->buffers[n].framePixels);
+                wayDebug(3, LogErrorLocation, "populateFrameBuffer copy the pixel image for %d bytes "
+                    "from address 0x%x to address 0x%x\n", state->imageSize,
+                    state->image, state->buffers[n].framePixels);
                 memcpy(state->buffers[n].framePixels, state->image, state->imageSize);
-                //fprintf(stderr, "populateFrameBuffer memcpy complete.\n");
+                wayDebug(3, LogErrorLocation, "populateFrameBuffer memcpy complete.\n");
                 state->buffers[n].frameBufferAvailable = false;
                 }
             else
                 {
-                fprintf(stderr, "populateFrameBuffer unable to create a new buffer.\n");
+                logDtError(LogErrorLocation, "populateFrameBuffer unable to create a new buffer.\n");
                 return -1;
                 }
             }
         else
             {
-            fprintf(stderr, "populateFrameBuffer unable to locate an unused buffer slot.\n");
+            logDtError(LogErrorLocation, "populateFrameBuffer unable to locate an unused buffer slot.\n");
             return -1;
             }
         }
@@ -2174,7 +2277,7 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     {
     WlClientState *state = data;
     static bool sendPPChar = false;
-    //fprintf(stderr, "Entering surface frame done at time = %d.\n", time);
+    wayDebug(2, LogErrorLocation, "Entering surface frame done at time = %d.\n", time);
 
     /*--------------------------------------------------------------------------
     **  Destroy the passed in callback because it can only be used once and
@@ -2191,24 +2294,24 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **------------------------------------------------------------------------*/
     if ((state->pendingWidth > 0) && (state->pendingHeight > 0))
         {
-        fprintf(stderr, "SurfaceFrameDone entered with a pending resize.\n");
-        fprintf(stderr, "  new width = %d, new height = %d.\n",
+        wayDebug(2, LogErrorLocation, "SurfaceFrameDone entered with a pending resize.\n");
+        wayDebug(2, LogErrorLocation, "  new width = %d, new height = %d.\n",
             state->pendingWidth, state->pendingHeight);
         state->lastFrame = time;
         return;
         }
 
     /*--------------------------------------------------------------------------
-    **  Paint the screen at about 60 frames per second, which is about 16.6ms.
-    **  Delay if we have come back in less than 16ms
+    **  Paint the screen at about the configured frames per second, which is
+    **  about 10ms. Delay if we have come back in less time. The returned time
+    **  values are in increasing milliseconds but not necesssarily synchronized
+    **  to the time if day clock.
     **------------------------------------------------------------------------*/
-    uint32_t delay = time - state->lastFrame;
-    if (delay <= 16)
+    int delay = time - state->lastFrame;
+    int waitTime = (FrameTime / 1000) - delay;
+    if (waitTime > 0)
         {
-        struct timespec delayns;
-        delayns.tv_sec = 0;
-        delayns.tv_nsec = (16 - delay) * 1000 * 1000;
-        nanosleep(&delayns, NULL);
+        sleepMsec((u32)waitTime);
         }
 
     /*--------------------------------------------------------------------------
@@ -2235,19 +2338,66 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
                 **  Ignore the line feed because we only run this code on Unix type
                 **  platforms.
                 */
-                logDtError(LogErrorLocation, "Received key press symbol XKB_KEY_Linefeed\n");
+                wayDebug(2, LogErrorLocation, "Received key press symbol XKB_KEY_Linefeed\n");
                 ppKeyIn = 0;
-
                 }
             else if (keySym == XKB_KEY_Return)
                 {
-                logDtError(LogErrorLocation, "Received key press symbol XKB_KEY_Return\n");
+                wayDebug(2, LogErrorLocation, "Received key press symbol XKB_KEY_Return\n");
                 ppKeyIn = '\r';
                 /*
                 **  Short delay to allow PP program to process the line. This may
                 **  require customisation.
                 */
                 clipToKeyboardDelay = 30;
+                }
+            else if (keySym == XKB_KEY_F1)
+                {
+                /*----------------------------------------------------------------------
+                **  Process the debug level 1 request (key F1). If we are in level 1
+                **  cancel all debug otherwise set level 1.
+                **--------------------------------------------------------------------*/
+                logDtError(LogErrorLocation, "Received key press symbol XKB_KEY_F1\n");
+                if (debugWayland == 1)
+                    {
+                    debugWayland = 0;
+                    }
+                else
+                    {
+                    debugWayland = 1;
+                    }
+                }
+            else if (keySym == XKB_KEY_F2)
+                {
+                /*----------------------------------------------------------------------
+                **  Process the debug level 2 request (key F2). If we are in level 2
+                **  cancel all debug otherwise set level 2.
+                **--------------------------------------------------------------------*/
+                logDtError(LogErrorLocation, "Received key press symbol XKB_KEY_F2\n");
+                if (debugWayland == 2)
+                    {
+                    debugWayland = 0;
+                    }
+                else
+                    {
+                    debugWayland = 2;
+                    }
+                }
+            else if (keySym == XKB_KEY_F3)
+                {
+                /*----------------------------------------------------------------------
+                **  Process the debug level 3 request (key F3). If we are in level 3
+                **  cancel all debug otherwise set level 3.
+                **--------------------------------------------------------------------*/
+                logDtError(LogErrorLocation, "Received key press symbol XKB_KEY_F3\n");
+                if (debugWayland == 3)
+                    {
+                    debugWayland = 0;
+                    }
+                else
+                    {
+                    debugWayland = 3;
+                    }
                 }
             else if (keySym == XKB_KEY_XF86Paste)
                 {
@@ -2264,10 +2414,10 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
                 **--------------------------------------------------------------------*/
                 state->wlDataDevice = wl_data_device_manager_get_data_device(
                 state->wlDataDeviceManager, state->wlSeat);
-                logDtError(LogErrorLocation, "Created data device for paste.\n");
+                wayDebug(1, LogErrorLocation, "Created data device for paste.\n");
                 wl_data_device_add_listener(state->wlDataDevice, &wlDataDeviceListener,
                     state);
-                logDtError(LogErrorLocation, "Created data device listener for paste.\n");
+                wayDebug(1, LogErrorLocation, "Created data device listener for paste.\n");
                 state->pasteActive = true;
                 }
             else
@@ -2280,11 +2430,11 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
 
     /*--------------------------------------------------------------------------
     **  The original console hardware used a CRT screen, which is not persistent.
-    **  To try and emulate this behavior we fade the image buffer by 50% on
+    **  To try and emulate this behavior we fade the image buffer by 75% on
     **  each frame update and rely on the PPU refresh processing to repaint
     **  the needed information.
     **------------------------------------------------------------------------*/
-    if ((state->image != NULL) && sendPPChar)
+    if (state->image != NULL)
         {
         int height = state->height;
         int width = state->width;
@@ -2292,7 +2442,7 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
             {
             for (int x = 0; x < width; ++x)
                 {
-                state->image[y * width + x].green = state->image[y * width + x].green >> 1;
+                state->image[y * width + x].green = state->image[y * width + x].green >> 2;
                 }
              }
         }
@@ -2300,10 +2450,11 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **  Prepare the next frame image by processing the incoming display list
     **  from the PPU.
     **------------------------------------------------------------------------*/
+    wayDebug(2, LogErrorLocation, "SurfaceFrameDone calling drawText.\n");
     drawText(state);
     if (state->image == NULL)
         {
-        fprintf(stderr, "Unable to update the frame image buffer, aborting.\n");
+        logDtError(LogErrorLocation, "Unable to update the frame image buffer, aborting.\n");
         return;
         }
 
@@ -2343,28 +2494,6 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
 const struct wl_callback_listener wlSurfaceFrameListener = {
     .done = wlSurfaceFrameDone,
 };
-
-/*--------------------------------------------------------------------------
-**
-**  Purpose:        An event bit mask definition tracking which pointer 
-**                  events have occurred in this pointer frame.
-**                  Note: These definitions are formatted in a manner 
-**                  consistent with other Wayland formatting, not normal
-**                  DtCyber formatting because they are part of the Wayland
-**                  specific code.
-**
-**------------------------------------------------------------------------*/
-enum pointerEventMask
-    {
-    POINTER_EVENT_ENTER = 1 << 0,
-    POINTER_EVENT_LEAVE = 1 << 1,
-    POINTER_EVENT_MOTION = 1 << 2,
-    POINTER_EVENT_BUTTON = 1 << 3,
-    POINTER_EVENT_AXIS = 1 << 4,
-    POINTER_EVENT_AXIS_SOURCE = 1 << 5,
-    POINTER_EVENT_AXIS_STOP = 1 << 6,
-    POINTER_EVENT_AXIS_DISCRETE = 1 << 7,
-    };
 
 /*--------------------------------------------------------------------------
 **  Purpose:        Pointer event handling functions.
@@ -2595,79 +2724,65 @@ wlPointerFrame(void *data, struct wl_pointer *wlPointer)
  
     if (event->eventMask & POINTER_EVENT_ENTER)
         {
-//        fprintf(stderr, "entered %f, %f ",
-//                wl_fixed_to_double(event->surfaceX),
-//                wl_fixed_to_double(event->surfaceY));
+        wayDebug(2, LogErrorLocation, "entered %f, %f ",
+            wl_fixed_to_double(event->surfaceX),
+            wl_fixed_to_double(event->surfaceY));
         }
  
     if (event->eventMask & POINTER_EVENT_LEAVE)
         {
-//        fprintf(stderr, "leave");
+        wayDebug(2, LogErrorLocation, "leave");
         }
  
     if (event->eventMask & POINTER_EVENT_MOTION)
         {
-//        fprintf(stderr, "motion %f, %f ",
-//                wl_fixed_to_double(event->surfaceX),
-//                wl_fixed_to_double(event->surfaceY));
+        wayDebug(2, LogErrorLocation, "motion %f, %f ",
+            wl_fixed_to_double(event->surfaceX),
+            wl_fixed_to_double(event->surfaceY));
         }
  
     if (event->eventMask & POINTER_EVENT_BUTTON)
         {
         state->processConfigure = (event->ptrState == WL_POINTER_BUTTON_STATE_RELEASED);
-//        char *state = event->state == WL_POINTER_BUTTON_STATE_RELEASED ?
-//            "released" : "pressed";
-//        fprintf(stderr, "button %d %s ", event->button, state);
+        wayDebug(2, LogErrorLocation, "button %d %s ", event->button,
+            event->ptrState == WL_POINTER_BUTTON_STATE_RELEASED ? "released" : "pressed");
         }
  
-    uint32_t axis_events = POINTER_EVENT_AXIS
-        | POINTER_EVENT_AXIS_SOURCE
-        | POINTER_EVENT_AXIS_STOP
-        | POINTER_EVENT_AXIS_DISCRETE;
-
-    char *axis_name[2] = {
-        [WL_POINTER_AXIS_VERTICAL_SCROLL] = "vertical",
-        [WL_POINTER_AXIS_HORIZONTAL_SCROLL] = "horizontal",
-    };
-
-    char *axis_source[4] = {
-        [WL_POINTER_AXIS_SOURCE_WHEEL] = "wheel",
-        [WL_POINTER_AXIS_SOURCE_FINGER] = "finger",
-        [WL_POINTER_AXIS_SOURCE_CONTINUOUS] = "continuous",
-        [WL_POINTER_AXIS_SOURCE_WHEEL_TILT] = "wheel tilt",
-    };
     if (event->eventMask & axis_events)
         {
+        char line[150] = "\0";
+        char tmp[30] = "\0";
         for (size_t i = 0; i < 2; ++i)
             {
             if (!event->axes[i].valid)
                 {
                 continue;
                 }
-//            fprintf(stderr, "%s axis ", axis_name[i]);
+            snprintf(tmp, 30, "%s axis ", axis_name[i]);
+            strcat(line, tmp);
             if (event->eventMask & POINTER_EVENT_AXIS)
                 {
-//                fprintf(stderr, "value %f ", wl_fixed_to_double(
-//                        event->axes[i].value));
+                snprintf(tmp, 30, "value %f ", wl_fixed_to_double(event->axes[i].value));
+                strcat(line, tmp);
                 }
             if (event->eventMask & POINTER_EVENT_AXIS_DISCRETE)
                 {
-//                fprintf(stderr, "discrete %d ",
-//                        event->axes[i].discrete);
+                snprintf(tmp, 30, "discrete %d ", event->axes[i].discrete);
+                strcat(line, tmp);
                 }
             if (event->eventMask & POINTER_EVENT_AXIS_SOURCE)
                 {
-//                fprintf(stderr, "via %s ",
-//                        axis_source[event->axisSource]);
+                snprintf(tmp, 30, "via %s ", axis_source[event->axisSource]);
+                strcat(line, tmp);
                 }
             if (event->eventMask & POINTER_EVENT_AXIS_STOP)
                 {
-//                fprintf(stderr, "(stopped) ");
+                strcat(line, "(stopped)\n");
                 }
+            wayDebug(2, LogErrorLocation, line);
             }
         }
  
-//    fprintf(stderr, "\n");
     memset(event, 0, sizeof(*event));
     }
 
@@ -2716,7 +2831,7 @@ wlKeyboardKeymap(void *data, struct wl_keyboard *wlKeyboard,
     WlClientState *state = data;
     if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1)
         {
-        fprintf(stderr, "Ignoring incoming keyboard map of unsupported type code %d\n",
+        logDtError(LogErrorLocation, "Ignoring incoming keyboard map of unsupported type code %d\n",
             format);
         return;
         }
@@ -2724,7 +2839,7 @@ wlKeyboardKeymap(void *data, struct wl_keyboard *wlKeyboard,
     char *mapShm = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
     if (mapShm == MAP_FAILED)
         {
-        fprintf(stderr, "Unable to memory map incoming keyboard map, error %d\n",
+        logDtError(LogErrorLocation, "Unable to memory map incoming keyboard map, error %d\n",
             errno);
         return;
         }
@@ -2765,18 +2880,22 @@ wlKeyboardEnter(void *data, struct wl_keyboard *wlKeyboard,
                struct wl_array *keys)
     {
     WlClientState *state = data;
-    //fprintf(stderr, "keyboard enter; keys pressed are:\n");
+    wayDebug(2, LogErrorLocation, "keyboard enter; keys pressed are:\n");
     uint32_t *key;
     wl_array_for_each(key, keys)
         {
-        char buf[128];
+        char buf[40];
+        char tmp[50] = "\0";
+        char line[150] = "\0";
         xkb_keysym_t sym = xkb_state_key_get_one_sym(
                     state->xkbState, *key + 8);
         xkb_keysym_get_name(sym, buf, sizeof(buf));
-        //fprintf(stderr, "sym: %-12s (%d), ", buf, sym);
+        snprintf(line, 150, "sym: %-12s (%d), ", buf, sym);
         xkb_state_key_get_utf8(state->xkbState,
                     *key + 8, buf, sizeof(buf));
-        //fprintf(stderr, "utf8: '%s'\n", buf);
+        snprintf(tmp, 50, "utf8: '%s'\n", buf);
+        strcat(line, tmp);
+        wayDebug(2, LogErrorLocation, line);
         }
     }
 
@@ -2802,15 +2921,18 @@ wlKeyboardKey(void *data, struct wl_keyboard *wlKeyboard,
     WlClientState *state = data;
     uint32_t keyCode = key + 8;   /* Translate to xkb code from common input code */
     xkb_keysym_t sym = xkb_state_key_get_one_sym( state->xkbState, keyCode);
-    /*
-    char buf[128];
-    xkb_keysym_get_name(sym, buf, sizeof(buf));
-    const char *action =
-        keyState == WL_KEYBOARD_KEY_STATE_PRESSED ? "press" : "release";
-    fprintf(stderr, "key %s: sym: %-12s (0x%x), ", action, buf, sym);
-    xkb_state_key_get_utf8(state->xkbState, keyCode, buf, sizeof(buf));
-    fprintf(stderr, "utf8: '%s'\n", buf);
-    */
+    if (debugWayland > 1)
+        {
+        char buf[128];
+        char pline[MaxPline] = "\0";
+        xkb_keysym_get_name(sym, buf, sizeof(buf));
+        const char *action =
+            keyState == WL_KEYBOARD_KEY_STATE_PRESSED ? "press" : "release";
+        snprintf(pline, MaxPline, "key %s: sym: %-12s (0x%x), ", action, buf, sym);
+        strcat(pline, "utf8: '%s'\n");
+        xkb_state_key_get_utf8(state->xkbState, keyCode, buf, sizeof(buf));
+        wayDebug(2,LogErrorLocation, pline, buf);
+        }
     /*--------------------------------------------------------------------------
     **  DtCyber uses the sequence (META_L or ALT_L) 'p' to indicate a paste from
     **  the clipboard operation. Here we check which modifier keys are active
@@ -2867,7 +2989,7 @@ wlKeyboardKey(void *data, struct wl_keyboard *wlKeyboard,
 
         if ((sym != XKB_KEY_NoSymbol) && (sym != XKB_KEY_Alt_L))
             {
-            //fprintf(stderr, "wlKeyboardKey queueing keypress symbol '0x%0x'.\n", sym);
+            wayDebug(3, LogErrorLocation, "wlKeyboardKey queueing keypress symbol '0x%0x'.\n", sym);
             queueKey(state, sym);
             }
         }
@@ -2899,7 +3021,7 @@ void
 wlKeyboardLeave(void *data, struct wl_keyboard *wlKeyboard,
                uint32_t serial, struct wl_surface *surface)
     {
-    //fprintf(stderr, "Keyboard leave\n");
+    wayDebug(3, LogErrorLocation, "Keyboard leave, flush any queued key data.\n");
     WlClientState *state = data;
     while (!isKeyBufEmpty(state))
         {
@@ -3214,7 +3336,7 @@ wlTouchFrame(void *data, struct wl_touch *wlTouch)
     WlClientState *state = data;
     struct touch_event *touch = &state->touchEvent;
     const size_t nmemb = sizeof(touch->points) / sizeof(struct touch_point);
-//    fprintf(stderr, "touch event @ %d:\n", touch->time);
+    wayDebug(3, LogErrorLocation, "touch event @ %d:\n", touch->time);
 
     for (size_t i = 0; i < nmemb; ++i)
         {
@@ -3223,42 +3345,42 @@ wlTouchFrame(void *data, struct wl_touch *wlTouch)
             {
                 continue;
             }
-//        fprintf(stderr, "point %d: ", touch->points[i].id);
+//        logDtError(LogErrorLocation, "point %d: ", touch->points[i].id);
 
         if (point->eventMask & TOUCH_EVENT_DOWN)
             {
-//            fprintf(stderr, "down %f,%f ",
+//            logDtError(LogErrorLocation, "down %f,%f ",
 //                    wl_fixed_to_double(point->surfaceX),
 //                    wl_fixed_to_double(point->surfaceY));
             }
 
         if (point->eventMask & TOUCH_EVENT_UP)
             {
-//            fprintf(stderr, "up ");
+//            logDtError(LogErrorLocation, "up ");
             }
 
         if (point->eventMask & TOUCH_EVENT_MOTION)
             {
-//            fprintf(stderr, "motion %f,%f ",
+//            logDtError(LogErrorLocation, "motion %f,%f ",
 //                    wl_fixed_to_double(point->surfaceX),
 //                    wl_fixed_to_double(point->surfaceY));
             }
 
         if (point->eventMask & TOUCH_EVENT_SHAPE)
             {
-//            fprintf(stderr, "shape %fx%f ",
+//            logDtError(LogErrorLocation, "shape %fx%f ",
 //                    wl_fixed_to_double(point->major),
 //                    wl_fixed_to_double(point->minor));
             }
 
         if (point->eventMask & TOUCH_EVENT_ORIENTATION)
             {
-//            fprintf(stderr, "orientation %f ",
+//            logDtError(LogErrorLocation, "orientation %f ",
 //                    wl_fixed_to_double(point->orientation));
             }
 
         point->valid = false;
-//        fprintf(stderr, "\n");
+//        logDtError(LogErrorLocation, "\n");
         }
     }
 
@@ -3307,13 +3429,13 @@ wlSeatCapabilities(void *data, struct wl_seat *wlSeat, uint32_t capabilities)
 
     if (have_pointer && state->wlPointer == NULL)
         {
-        fprintf(stderr, "Adding pointer input capability.\n");
+        wayDebug(1, LogErrorLocation, "Adding pointer input capability.\n");
         state->wlPointer = wl_seat_get_pointer(state->wlSeat);
         wl_pointer_add_listener(state->wlPointer, &wlPointerListener, state);
         }
     else if (!have_pointer && state->wlPointer != NULL)
         {
-        fprintf(stderr, "Removing pointer input capability.\n");
+        wayDebug(1, LogErrorLocation, "Removing pointer input capability.\n");
         wl_pointer_release(state->wlPointer);
         state->wlPointer = NULL;
         }
@@ -3322,14 +3444,14 @@ wlSeatCapabilities(void *data, struct wl_seat *wlSeat, uint32_t capabilities)
 
     if (have_keyboard && state->wlKeyboard == NULL)
         {
-        fprintf(stderr, "Adding keyboard input capability.\n");
+        wayDebug(1, LogErrorLocation, "Adding keyboard input capability.\n");
         state->wlKeyboard = wl_seat_get_keyboard(state->wlSeat);
         wl_keyboard_add_listener(state->wlKeyboard,
             &wlKeyboardListener, state);
         }
     else if (!have_keyboard && state->wlKeyboard != NULL)
         {
-        fprintf(stderr, "Removing keyboard input capability.\n");
+        wayDebug(1, LogErrorLocation, "Removing keyboard input capability.\n");
         wl_keyboard_release(state->wlKeyboard);
         state->wlKeyboard = NULL;
         }
@@ -3338,14 +3460,14 @@ wlSeatCapabilities(void *data, struct wl_seat *wlSeat, uint32_t capabilities)
 
     if (have_touch && state->wlTouch == NULL)
         {
-        fprintf(stderr, "Adding touch input capability.\n");
+        wayDebug(1, LogErrorLocation, "Adding touch input capability.\n");
         state->wlTouch = wl_seat_get_touch(state->wlSeat);
         wl_touch_add_listener(state->wlTouch,
                 &wlTouchListener, state);
         }
     else if (!have_touch && state->wlTouch != NULL)
         {
-        fprintf(stderr, "Removing touch input capability.");
+        wayDebug(1, LogErrorLocation, "Removing touch input capability.");
         wl_touch_release(state->wlTouch);
         state->wlTouch = NULL;
         }
@@ -3368,7 +3490,7 @@ void
 wlSeatName(void *data, struct wl_seat *wlSeat, const char *name)
 {
     WlClientState *state = data;
-    fprintf(stderr, "seat name: %s\n", name);
+    wayDebug(1, LogErrorLocation, "seat name: %s\n", name);
 }
 
 /*--------------------------------------------------------------------------
@@ -3547,6 +3669,7 @@ loadDtCyberFont(WlClientState *state, int ndx, char *fontFamily,
     DtCyberFont *font = &state->fonts[ndx];
     font->pointSize = pointSize;
     font->fontFamily = fontFamily;
+    wayDebug(1, LogErrorLocation, "About to locate the font file.\n");
     font->filePath = findFontFile(font->fontFamily, font->pointSize);
     if (font->filePath == NULL)
         {
@@ -3555,7 +3678,7 @@ loadDtCyberFont(WlClientState *state, int ndx, char *fontFamily,
         initDtCyberFont(state, ndx);
         return false;
         }
-    logDtError(LogErrorLocation, "About to load the font in file %s\n", font->filePath);
+    wayDebug(1, LogErrorLocation, "About to load the font in file %s\n", font->filePath);
     FT_Error error = FT_New_Face(state->library, font->filePath, 0, &font->face);
     if (error == FT_Err_Unknown_File_Format)
         {
@@ -3589,26 +3712,26 @@ loadDtCyberFont(WlClientState *state, int ndx, char *fontFamily,
     /*--------------------------------------------------------------------------
     **  Debug print some potentially useful face information.
     **------------------------------------------------------------------------*/
-    logDtError(LogErrorLocation, "Your selected font family has %d bitmap strikes available.\n",
+    wayDebug(1, LogErrorLocation, "Your selected font family has %d bitmap strikes available.\n",
         font->face->num_fixed_sizes);
     if (font->face->num_fixed_sizes > 0)
         {
         for (int ndx = 0; ndx < font->face->num_fixed_sizes; ndx++)
             {
-            logDtError(LogErrorLocation, "  For size %d we have width %d and height %d.\n",
+            wayDebug(1, LogErrorLocation, "  For size %d we have width %d and height %d.\n",
                 ndx, font->face->available_sizes[ndx].width,
                 font->face->available_sizes[ndx].height);
             }
         }
-    logDtError(LogErrorLocation, "Your selected face has a bbox of: xMin = %d xMax = %d yMin = %d yMax = %d.\n",
+    wayDebug(1, LogErrorLocation, "Your selected face has a bbox of: xMin = %d xMax = %d yMin = %d yMax = %d.\n",
         font->face->bbox.xMin >> 6, font->face->bbox.xMax >> 6,
         font->face->bbox.yMin >> 6, font->face->bbox.yMax >> 6);
 
     /*--------------------------------------------------------------------------
-    **  Draw text pattern at the specified point size on a default dpi screen.
-    **  This is the most common screen resolution in 2025 so we hard code it
-    **  for now. If one day we can get the active screen resolution back from
-    **  Wayland this code can be updated to dynamically support the real resolution.
+    **  Draw text pattern at the specified point size and DPI value. For now the
+    **  DPI value is hard coded in the constants above. If one day we can get
+    **  the active screen resolution back from Wayland this code can be updated
+    **  to dynamically support the real resolution.
     **
     **  We choose the size here so we can set an initial pen position.
     **------------------------------------------------------------------------*/
@@ -3640,7 +3763,7 @@ loadDtCyberFont(WlClientState *state, int ndx, char *fontFamily,
     /*--------------------------------------------------------------------------
     **  Some mono spaced fonts have an incorrect max_advance size value. Work
     **  around that here by loading a glyph for the character 'w' and
-    **  extracting the glyph advance as our bask space advance value.
+    **  extracting the glyph advance as our base space advance value.
     **  Note: the glyph advance is in 16.16 format and needs to be shifted
     **  right by 10 bit (16 -6) to convert it to 26.6 format for the pen.
     **------------------------------------------------------------------------*/
@@ -3651,14 +3774,14 @@ loadDtCyberFont(WlClientState *state, int ndx, char *fontFamily,
         error = FT_Get_Glyph(font->face->glyph, &font->glyphCache[keyPress]);
         if (error == FT_Err_Ok)
             {
-            fprintf(stderr, "main loop caching a new glyph for '%x'\n",
+            wayDebug(1, LogErrorLocation, "Caching a new glyph for keypress '%x'\n",
                 keyPress);
             font->bsAdvance = font->glyphCache[keyPress]->advance.x >> 10;
             }
         }
     else
         {
-        fprintf(stderr, "Unable to load character code '%x', error = %d\n",
+        logDtError(LogErrorLocation, "Unable to load character code '%x', error = %d\n",
             keyPress, error);
         FT_Done_Face(font->face);
         initDtCyberFont(state, ndx);
@@ -3735,7 +3858,7 @@ void *windowThread(void *param)
     /*--------------------------------------------------------------------------
     **  Initial setup of client state object
     **------------------------------------------------------------------------*/
-    logDtError(LogErrorLocation, "Entered windowThread\n");
+    wayDebug(1, LogErrorLocation, "Entered windowThread\n");
 
     state.closed = false;
     state.syncDone = false;
@@ -3745,27 +3868,28 @@ void *windowThread(void *param)
     state.pendingHeight = 0;
     state.processConfigure = false;
     state.pageSize = sysconf(_SC_PAGE_SIZE);
-    logDtError(LogErrorLocation, "windowThread calling calculatePixelBufferSize\n");
+    wayDebug(2, LogErrorLocation, "windowThread calling calculatePixelBufferSize\n");
     state.pixelBufferSize = calculatePixelBufferSize(state.width, state.height, &state);
-    logDtError(LogErrorLocation, "windowThread done calculatePixelBufferSize\n");
+    wayDebug(2, LogErrorLocation, "windowThread done calculatePixelBufferSize\n");
     state.image = NULL;
     state.imageSize = 0;
     state.maxBuffers = MAXBUFFERS;
-    logDtError(LogErrorLocation, "windowThread calling wl_display_connect\n");
+    wayDebug(2, LogErrorLocation, "windowThread calling wl_display_connect\n");
     state.wlDisplay = wl_display_connect(NULL);
-    logDtError(LogErrorLocation, "windowThread done wl_display_connect\n");
-    logDtError(LogErrorLocation, "windowThread calling wl_display_get_registry\n");
+    wayDebug(2, LogErrorLocation, "windowThread done wl_display_connect\n");
+    wayDebug(2, LogErrorLocation, "windowThread calling wl_display_get_registry\n");
     state.wlRegistry = wl_display_get_registry(state.wlDisplay);
-    logDtError(LogErrorLocation, "windowThread done wl_display_get_registry\n");
+    wayDebug(2, LogErrorLocation, "windowThread done wl_display_get_registry\n");
     state.xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    logDtError(LogErrorLocation, "windowThread calling allocateKeyBuff\n");
+    wayDebug(2, LogErrorLocation, "windowThread calling allocateKeyBuff\n");
     allocateKeyBuff(&state, 256);
-    logDtError(LogErrorLocation, "windowThread done allocateKeyBuff\n");
+    wayDebug(2, LogErrorLocation, "windowThread done allocateKeyBuff\n");
     state.wlDataDevice = NULL;
     state.pasteActive = false;
     state.ddOfferedTextPlain = false;
+    populateYOffsetMap(&state);
 
-    logDtError(LogErrorLocation, "windowThread initial state setup done\n");
+    wayDebug(1, LogErrorLocation, "windowThread initial state setup done\n");
     /*--------------------------------------------------------------------------
     **  Populate the greyscale gamma corection table for our desired gamma
     **------------------------------------------------------------------------*/
@@ -3777,19 +3901,17 @@ void *windowThread(void *param)
         state.gammaTable[ndx] = (unsigned char)(powf(base, exponent) * 255.0);
         }
 
-    /*--------------------------------------------------------------------------
-    fprintf(stderr, "Our generated gamma table is:\n");
+    wayDebug(3, LogErrorLocation, "Our generated gamma table is:\n");
     for (int ndx =0; ndx <256; ndx++)
         {
-        fprintf(stderr, "    entry %d has value %d\n", ndx, state.gammaTable[ndx]);
+        wayDebug(3, LogErrorLocation, "    entry %d has value %d\n", ndx, state.gammaTable[ndx]);
         }
-    **------------------------------------------------------------------------*/
 
     /*--------------------------------------------------------------------------
     **  Initial setup of the shared memory frame buffer cache and buffers
     **  as empty.
     **------------------------------------------------------------------------*/
-    fprintf(stderr, "main About to initialize frame buffer cache structures.\n");
+    wayDebug(1, LogErrorLocation, "About to initialize frame buffer cache structures.\n");
 
     for (int n = 0; n < state.maxBuffers; n++)
         {
@@ -3807,7 +3929,7 @@ void *windowThread(void *param)
     FT_Error error = FT_Init_FreeType(&state.library);
     if (error != FT_Err_Ok)
         {
-        fprintf(stderr, "Error initializing Freetype library %d\n", error);
+        logDtError(LogErrorLocation, "Error initializing Freetype library %d\n", error);
         return (void *)0;
         }
 
@@ -3815,42 +3937,42 @@ void *windowThread(void *param)
         {
         initDtCyberFont(&state, ndx);
         }
-    fprintf(stderr, "DtCyberFont structure initialized.\n");
+    wayDebug(1, LogErrorLocation, "DtCyberFont structure initialized.\n");
 
     /*--------------------------------------------------------------------------
     **  Setup the font details we need for font number the desired fonts.
     **------------------------------------------------------------------------*/
 
-    logDtError(LogErrorLocation, "Loading font details for font %d.\n", FontNdxSmall);
+    wayDebug(1, LogErrorLocation, "Loading font details for font %d.\n", FontNdxSmall);
     if (loadDtCyberFont(&state, FontNdxSmall, fontName, fontSmall))
         {
-        logDtError(LogErrorLocation, "Successfully loaded font %d.\n", FontNdxSmall);
+        wayDebug(1, LogErrorLocation, "Successfully loaded font %d.\n", FontNdxSmall);
         }
     else
         {
-        logDtError(LogErrorLocation, "Failed loading font %d.\n", FontNdxSmall);
+        wayDebug(1, LogErrorLocation, "Failed loading font %d.\n", FontNdxSmall);
         if (state.library != NULL) FT_Done_FreeType(state.library);
         return (void *)0;
         }
-    logDtError(LogErrorLocation, "Loading font details for font %d.\n", FontNdxMedium);
+    wayDebug(1, LogErrorLocation, "Loading font details for font %d.\n", FontNdxMedium);
     if (loadDtCyberFont(&state, FontNdxMedium, fontName, fontMedium))
         {
-        logDtError(LogErrorLocation, "Successfully loaded font %d.\n", FontNdxMedium);
+        wayDebug(1, LogErrorLocation, "Successfully loaded font %d.\n", FontNdxMedium);
         }
     else
         {
-        logDtError(LogErrorLocation, "Failed loading font %d.\n", FontNdxMedium);
+        wayDebug(1, LogErrorLocation, "Failed loading font %d.\n", FontNdxMedium);
         if (state.library != NULL) FT_Done_FreeType(state.library);
         return (void *)0;
         }
-    logDtError(LogErrorLocation, "Loading font details for font %d.\n", FontNdxLarge);
+    wayDebug(1, LogErrorLocation, "Loading font details for font %d.\n", FontNdxLarge);
     if (loadDtCyberFont(&state, FontNdxLarge, fontName, fontLarge))
         {
-        logDtError(LogErrorLocation, "Successfully loaded font %d.\n", FontNdxLarge);
+        wayDebug(1, LogErrorLocation, "Successfully loaded font %d.\n", FontNdxLarge);
         }
     else
         {
-        logDtError(LogErrorLocation, "Failed loading font %d.\n", FontNdxLarge);
+        wayDebug(1, LogErrorLocation, "Failed loading font %d.\n", FontNdxLarge);
         if (state.library != NULL) FT_Done_FreeType(state.library);
         return (void *)0;
         }
@@ -3869,8 +3991,8 @@ void *windowThread(void *param)
     **------------------------------------------------------------------------*/
     state.pen.x = 0;
     state.pen.y = 0;
-    fprintf(stderr, "Initial pen position x = %d, y=%d.\n",
-        (state.pen.x / 64), (state.pen.y / 64));
+    wayDebug(1, LogErrorLocation, "Initial pen position x = %d, y=%d.\n",
+        (state.pen.x >> 6), (state.pen.y >> 6));
 
     /*--------------------------------------------------------------------------
     **  General Wayland initialization
@@ -3878,7 +4000,7 @@ void *windowThread(void *param)
     **  First set up global object interface pointers.
     **------------------------------------------------------------------------*/
 
-    logDtError(LogErrorLocation, "windowThread starting Wayland initialization\n");
+    wayDebug(1, LogErrorLocation, "windowThread starting Wayland initialization\n");
     wl_registry_add_listener(state.wlRegistry, &wlRegistryListener, &state);
     wl_display_roundtrip(state.wlDisplay);
 
@@ -3939,11 +4061,11 @@ void *windowThread(void *param)
     /*--------------------------------------------------------------------------
     **  Prepare the new frame image, as a blank screen.
     **------------------------------------------------------------------------*/
-    logDtError(LogErrorLocation, "windowThread painting first screen\n");
+    wayDebug(1, LogErrorLocation, "windowThread painting first screen\n");
     drawText(&state);
     if (state.image == NULL)
         {
-        fprintf(stderr, "Unable to update the frame image buffer, aborting.\n");
+        logDtError(LogErrorLocation, "Unable to update the frame image buffer, aborting.\n");
         return (void *)0;
         }
 
@@ -3962,7 +4084,7 @@ void *windowThread(void *param)
     **  Dispatch Wayland events until we get an error or window close request.
     **------------------------------------------------------------------------*/
 
-    logDtError(LogErrorLocation, "windowThread at processing loop\n");
+    wayDebug(1, LogErrorLocation, "windowThread at processing loop\n");
     while (wl_display_dispatch(state.wlDisplay) && displayActive)
         {
         /*----------------------------------------------------------------------
@@ -3972,13 +4094,13 @@ void *windowThread(void *param)
         }
 
     /*--------------------------------------------------------------------------
-    **  Clean up keyboardand frame buffers.
+    **  Clean up keyboard and frame buffers.
     **------------------------------------------------------------------------*/
 
     releaseKeyBuff(&state);
     if (state.image != NULL)
         {
-        fprintf(stderr, "Freeing the image pixel buffer space.\n");
+        wayDebug(1, LogErrorLocation, "Freeing the image pixel buffer space.\n");
         free((void *)state.image);
         state.image = NULL;
         }
@@ -3986,19 +4108,19 @@ void *windowThread(void *param)
         {
         if (state.buffers[n].framePixels != NULL)
             {
-            fprintf(stderr, "Unmapping the pixel buffer for buffer %d\n", n);
+            wayDebug(1, LogErrorLocation, "Unmapping the pixel buffer for buffer %d\n", n);
             munmap(state.buffers[n].framePixels, state.buffers[n].pixelBufferSize);
             state.buffers[n].framePixels = NULL;
             }
         if (state.buffers[n].frameBuffer != NULL)
             {
-            fprintf(stderr, "Destroying the frame buffer for slot %d\n", n);
+            wayDebug(1, LogErrorLocation, "Destroying the frame buffer for slot %d\n", n);
             wl_buffer_destroy(state.buffers[n].frameBuffer);
             state.buffers[n].frameBuffer = NULL;
             }
         state.buffers[n].frameBufferAvailable = false;
         }
-    fprintf(stderr, "Buffer cache cleanup completed.\n");
+    wayDebug(1, LogErrorLocation, "Buffer cache cleanup completed.\n");
 
     /*--------------------------------------------------------------------------
     **  Clean up font handling state.
