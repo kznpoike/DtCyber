@@ -1270,7 +1270,10 @@ static void wlDataDeviceHandleSelection(void *data,
             **  past request on our side. Otherwise just destroy the offer.
             **------------------------------------------------------------------------*/
             int fds[2];
-            pipe(fds);
+            if(pipe(fds) == -1)
+                {
+                //  Provide some error handling here.
+                };
             wl_data_offer_receive(offer, "text/plain", fds[1]);
             close(fds[1]);
 
@@ -3528,37 +3531,64 @@ registryGlobal(void *data, struct wl_registry *wlRegistry,
     WlClientState *state = data;
     if (strcmp(interface, wl_shm_interface.name) == 0)
         {
+        wayDebug(1, LogErrorLocation, "Found Wayland interface %s at version %d\n",
+            wl_shm_interface.name, version);
         state->wlShm = wl_registry_bind(
                 wlRegistry, name, &wl_shm_interface, 1);
+        wayDebug(1, LogErrorLocation, "Bound Wayland interface %s at version %d\n",
+            wl_shm_interface.name, 1);
         }
     else if (strcmp(interface, wl_compositor_interface.name) == 0)
         {
+        wayDebug(1, LogErrorLocation, "Found Wayland interface %s at version %d\n",
+            wl_compositor_interface.name, version);
         state->wlCompositor = wl_registry_bind(
                 wlRegistry, name, &wl_compositor_interface, 4);
+        wayDebug(1, LogErrorLocation, "Bound Wayland interface %s at version %d\n",
+            wl_compositor_interface.name, 4);
         }
     if (strcmp(interface, wl_data_device_manager_interface.name) == 0)
         {
+        wayDebug(1, LogErrorLocation, "Found Wayland interface %s at version %d\n",
+            wl_data_device_manager_interface.name, version);
 		state->wlDataDeviceManager = wl_registry_bind(
                 wlRegistry, name, &wl_data_device_manager_interface, 3);
+        wayDebug(1, LogErrorLocation, "Bound Wayland interface %s at version %d\n",
+            wl_data_device_manager_interface.name, 3);
         }
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0)
         {
+        wayDebug(1, LogErrorLocation, "Found Wayland interface %s at version %d\n",
+            xdg_wm_base_interface.name, version);
         state->xdgWmBase = wl_registry_bind(
                 wlRegistry, name, &xdg_wm_base_interface, 1);
+        wayDebug(1, LogErrorLocation, "Bound Wayland interface %s at version %d\n",
+            xdg_wm_base_interface.name, 1);
         xdg_wm_base_add_listener(state->xdgWmBase,
                 &xdgWmBaseListener, state);
         }
     else if (strcmp(interface, wl_seat_interface.name) == 0)
         {
+        wayDebug(1, LogErrorLocation, "Found Wayland interface %s at version %d\n",
+            wl_seat_interface.name, version);
         state->wlSeat = wl_registry_bind(
                 wlRegistry, name, &wl_seat_interface, 7);
+        wayDebug(1, LogErrorLocation, "Bound Wayland interface %s at version %d\n",
+            wl_seat_interface.name, 7);
         wl_seat_add_listener(state->wlSeat, &wlSeatListener, state);
         }
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         {
+        wayDebug(1, LogErrorLocation, "Found Wayland interface %s at version %d\n",
+            zxdg_decoration_manager_v1_interface.name, version);
 	    state->zxdgDecorationManagerV1 = wl_registry_bind(
                 wlRegistry, name, &zxdg_decoration_manager_v1_interface, 1);
+        wayDebug(1, LogErrorLocation, "Bound Wayland interface %s at version %d\n",
+            zxdg_decoration_manager_v1_interface.name, 1);
         }
+    else
+        wayDebug(1, LogErrorLocation, "Found Wayland interface %s at version %d\n",
+            interface, version);
     }
 
 /*--------------------------------------------------------------------------
@@ -3874,6 +3904,15 @@ void *windowThread(void *param)
     state.image = NULL;
     state.imageSize = 0;
     state.maxBuffers = MAXBUFFERS;
+    state.wlDisplay = NULL;
+    state.wlRegistry = NULL;
+    state.wlShm = NULL;
+    state.wlCompositor = NULL;
+    state.wlDataDeviceManager = NULL;
+    state.wlSeat = NULL;
+    state.wlDataDevice = NULL;
+    state.xdgWmBase = NULL;
+    state.zxdgDecorationManagerV1 = NULL;
     wayDebug(2, LogErrorLocation, "windowThread calling wl_display_connect\n");
     state.wlDisplay = wl_display_connect(NULL);
     wayDebug(2, LogErrorLocation, "windowThread done wl_display_connect\n");
@@ -4014,12 +4053,16 @@ void *windowThread(void *param)
     xdg_toplevel_add_listener(state.xdgToplevel, &xdgToplevelListener, &state);
 
     /*--------------------------------------------------------------------------
-    **  Set up the compositor decoration for our window.
+    **  Set up the compositor decoration for our window if we have a manager.
     **------------------------------------------------------------------------*/
-    state.zxdgToplevelDecorationV1 = zxdg_decoration_manager_v1_get_toplevel_decoration(
-		    state.zxdgDecorationManagerV1, state.xdgToplevel);
-    zxdg_toplevel_decoration_v1_add_listener(state.zxdgToplevelDecorationV1,
-		    &zxdgToplevelDecorationListener, &state);
+    if (state.zxdgDecorationManagerV1 != NULL)
+        {
+        state.zxdgToplevelDecorationV1 = zxdg_decoration_manager_v1_get_toplevel_decoration(
+            state.zxdgDecorationManagerV1, state.xdgToplevel);
+        zxdg_toplevel_decoration_v1_add_listener(state.zxdgToplevelDecorationV1,
+            &zxdgToplevelDecorationListener, &state);
+        }
+
     windowTitle[0] = '\0';
     strcat(windowTitle, displayName);
     strcat(windowTitle, " - " DtCyberVersion);
