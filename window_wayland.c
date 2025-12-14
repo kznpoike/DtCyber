@@ -2445,7 +2445,7 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
             {
             for (int x = 0; x < width; ++x)
                 {
-                state->image[y * width + x].green = state->image[y * width + x].green >> 2;
+                state->image[y * width + x].green = state->image[y * width + x].green >> 1;
                 }
              }
         }
@@ -3729,11 +3729,18 @@ loadDtCyberFont(WlClientState *state, int ndx, char *fontFamily,
     **  used to be mono spaced. If we dont do this we need to keep a shadow
     **  of every character input so that we can correctly compute the pixel
     **  area to be blanked for the backspace.
+    **
+    **  Note: Not all fixed width font families correctly set the FIXED_WIDTH
+    **        face flag. Try to also include a dirty workaround looking for
+    **        the word "Mono" in the family name. This at least works for the
+    **        family "Noto Sans Mono".
     **------------------------------------------------------------------------*/
-    if (!FT_IS_FIXED_WIDTH(font->face))
+    if (!(FT_IS_FIXED_WIDTH(font->face) || (strstr(font->face->family_name, "Mono") != NULL)))
 
         {
         logDtError(LogErrorLocation, "Your selcted font family is not mono space.\n");
+        logDtError(LogErrorLocation, "Your selcted font has family name \"%s\".\n", font->face->family_name);
+        logDtError(LogErrorLocation, "Your selcted font has face flags 0x%x.\n", font->face->face_flags);
         FT_Done_Face(font->face);
         initDtCyberFont(state, ndx);
         return false;
