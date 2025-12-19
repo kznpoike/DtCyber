@@ -239,6 +239,7 @@ typedef struct wlClientState
     FT_Library library;
     /* Frame buffer proxessing */
     WlContentBuffer buffers[MAXBUFFERS];
+    bool fadePixels;
     int maxBuffers;
     u16 offsetMapY[MaxY+1];
     } WlClientState;
@@ -2437,7 +2438,7 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **  each frame update and rely on the PPU refresh processing to repaint
     **  the needed information.
     **------------------------------------------------------------------------*/
-    if (state->image != NULL)
+    if (state->image != NULL && state->fadePixels)
         {
         int height = state->height;
         int width = state->width;
@@ -2445,10 +2446,11 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
             {
             for (int x = 0; x < width; ++x)
                 {
-                state->image[y * width + x].green = state->image[y * width + x].green >> 2;
+                state->image[y * width + x].green = state->image[y * width + x].green >> 1;
                 }
              }
         }
+    state->fadePixels = !state->fadePixels;
     /*--------------------------------------------------------------------------
     **  Prepare the next frame image by processing the incoming display list
     **  from the PPU.
@@ -3926,6 +3928,7 @@ void *windowThread(void *param)
     state.wlDataDevice = NULL;
     state.pasteActive = false;
     state.ddOfferedTextPlain = false;
+    state.fadePixels = false;
     populateYOffsetMap(&state);
 
     wayDebug(1, LogErrorLocation, "windowThread initial state setup done\n");
