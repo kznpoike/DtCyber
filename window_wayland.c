@@ -2306,13 +2306,16 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
         }
 
     /*--------------------------------------------------------------------------
-    **  Paint the screen at about the configured frames per second, which is
-    **  about 10ms. Delay if we have come back in less time. The returned time
-    **  values are in increasing milliseconds but not necesssarily synchronized
-    **  to the time if day clock.
+    **  According to CDC manual number 62952600 (Cyber 170 Display Station
+    **  CC545-C/D/E/F Hardware Reference) the original console required frame
+    **  refreshing at the rate of 50Hz. 
+    **  Paint the screen at about 50 frames per second, which is about 20ms.
+    **  Delay if we have come back in less time. The returned time values are
+    **  in increasing milliseconds but not necesssarily synchronized to the
+    **  time if day clock.
     **------------------------------------------------------------------------*/
     int delay = time - state->lastFrame;
-    int waitTime = (FrameTime / 1000) - delay;
+    int waitTime = 20 - delay;
     if (waitTime > 0)
         {
         sleepMsec((u32)waitTime);
