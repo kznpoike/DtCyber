@@ -78,6 +78,9 @@
 #define FontNdxSmall     0
 #define FontNdxMedium    1
 #define FontNdxLarge     2
+#define FontCtrSmall     FontSmall / 2
+#define FontCtrMedium    FontMedium / 2
+#define FontCtrLarge     FontLarge / 2
 #define DPI              75.0
 #define MaxPline         255
 
@@ -291,7 +294,8 @@ static u8              clipToKeyboardDelay  = 0;
 static int             usageDisplayCount = 0;
 static bool            isMeta;
 static WlClientState   state;
-static int             debugWayland = WAYDEBUG;
+//static int             debugWayland = WAYDEBUG;
+static int             debugWayland = 1;
 
 /*--------------------------------------------------------------------------
 **  Pointer support constants
@@ -1038,7 +1042,11 @@ calculatePixelBufferSize(int width, int height, WlClientState *state)
 **  Purpose:        Frame buffer handling functions.
 **                  Calculate and populate the Y co-ordinate mapping
 **                  table used to translate the 6612 / CC545 console
-**                  co-ordinate to the real window size in use.
+**                  co-ordinate to the real window size in use. There is
+**                  some question around the display of characters at 
+**                  original target line 0 (line 511 in the reversed map)
+**                  so we reduce mapped the window height by FontLarge in
+**                  this calculation to leave space for display.
 **
 **  Parameters:     Name        Description.
 **                  state       Client state data pointer.
@@ -1050,7 +1058,7 @@ calculatePixelBufferSize(int width, int height, WlClientState *state)
 void
 populateYOffsetMap(WlClientState *state)
     {
-    float factor = (state->height * 1.0) / (MaxY * 1.0);
+    float factor = ((state->height - FontLarge) * 1.0) / (MaxY * 1.0);
     for(int y = 0; y <= MaxY; y++)
         {
         state->offsetMapY[y] = (u16)(roundf(factor * (y * 1.0)));
@@ -1946,9 +1954,9 @@ drawText(WlClientState *state)
             curr, end);
         for (curr = display; curr < end; curr++)
             {
-            /*
-            **  Setup new font if necessary.
-            */
+            /*--------------------------------------------------------------------------
+            **  Setup new font size if needed.
+            --------------------------------------------------------------------------*/
             if (oldFont != curr->fontSize)
                 {
                 oldFont = curr->fontSize;
@@ -1982,13 +1990,45 @@ drawText(WlClientState *state)
                     }
                 }
 
+                /*----------------------------------------------------------------------
+                **  Setup new pen position. Note the for character display the provided
+                **  position is the geometric center of the 8x8, 16x16 or 32x32 raster
+                **  rectangle the character occupies. So we need to correct the pen
+                **  position back to the lower left corner of the font box, depending
+                **  on font size.
+                **--------------------------------------------------------------------*/
+                switch (oldFont)
+                    {
+                case FontDot:
+                    state->pen.x = curr->xPos << 6;
+                    state->pen.y = state->offsetMapY[curr->yPos] << 6;
+                    break;
+
+                case FontSmall:
+                    state->pen.x = (curr->xPos - FontCtrSmall) << 6;
+                    state->pen.y = state->offsetMapY[(curr->yPos - FontCtrSmall)] << 6;
+                    break;
+
+                case FontMedium:
+                    state->pen.x = (curr->xPos - FontCtrMedium) << 6;
+                    state->pen.y = state->offsetMapY[(curr->yPos - FontCtrMedium)] << 6;
+                    break;
+
+                case FontLarge:
+                    state->pen.x = (curr->xPos - FontCtrLarge) << 6;
+                    state->pen.y = state->offsetMapY[(curr->yPos - FontCtrLarge)] << 6;
+                    break;
+                    }
             /*
             **  Draw dot or character.
             */
-            state->pen.x = curr->xPos << 6;
-            state->pen.y = state->offsetMapY[curr->yPos] << 6;
             wayDebug(3, LogErrorLocation, "Drawing font %d at pen.x %d pen.y %d\n",
                 curr->fontSize, state->pen.x >> 6, state->pen.y >> 6);
+            if (curr->fontSize > FontDot && curr->yPos > 490)
+                {
+                wayDebug(1, LogErrorLocation, "Drawing font %d at original x %d original y %d\n",
+                    curr->fontSize, curr->xPos, curr->yPos);
+                }
             if (curr->fontSize == FontDot)
                 {
                 drawPoint(state, state->pen);
@@ -3683,8 +3723,8 @@ initDtCyberFont(WlClientState *state, int ndx)
 **                               having done nothing.
 **                  fontFamily   A character string containing the desired
 **                               font family name.
-**                  pointSize    A double precision number spaeifying the
-**                               desirec font size.
+**                  pointSize    A double precision number specifying the
+**                               desired font size.
 **
 **  Returns:        TRUE on success or FALSE on failure. If we encounter
 **                  a failure condition the DtCyberFont structure is 
@@ -3910,9 +3950,6 @@ void *windowThread(void *param)
     state.pendingHeight = 0;
     state.processConfigure = false;
     state.pageSize = sysconf(_SC_PAGE_SIZE);
-    wayDebug(2, LogErrorLocation, "windowThread calling calculatePixelBufferSize\n");
-    state.pixelBufferSize = calculatePixelBufferSize(state.width, state.height, &state);
-    wayDebug(2, LogErrorLocation, "windowThread done calculatePixelBufferSize\n");
     state.image = NULL;
     state.imageSize = 0;
     state.maxBuffers = MAXBUFFERS;
@@ -3939,7 +3976,6 @@ void *windowThread(void *param)
     state.pasteActive = false;
     state.ddOfferedTextPlain = false;
     state.fadePixels = false;
-    populateYOffsetMap(&state);
 
     wayDebug(1, LogErrorLocation, "windowThread initial state setup done\n");
     /*--------------------------------------------------------------------------
@@ -4030,6 +4066,25 @@ void *windowThread(void *param)
         }
     state.currFontNdx = 0;
     state.currFont = &state.fonts[state.currFontNdx];
+
+    /*
+    **  Correct the screen height value to ensure that 64 lines of font small
+    **  are accomodated. The 64 is derived from hardware 512 lines and 8 lines
+    **  per character for the small font. The NOS1.3 DSD implementation wants
+    **  to place data on line 511, so we add FontLarge extra lines to ensure
+    **  space in the window.
+    */
+    int charHeight = ((state.fonts[FontNdxSmall].face->size->metrics.height >>6) * 64) + FontLarge;
+    wayDebug(1, LogErrorLocation, "Adjusting screen height from  %d to %d.\n",
+        state.height, charHeight);
+    if (charHeight > state.height)
+        {
+        state.height = charHeight;
+        }
+    wayDebug(2, LogErrorLocation, "windowThread calling calculatePixelBufferSize\n");
+    state.pixelBufferSize = calculatePixelBufferSize(state.width, state.height, &state);
+    wayDebug(2, LogErrorLocation, "windowThread done calculatePixelBufferSize\n");
+    populateYOffsetMap(&state);
 
     /*
     **  Window thread loop.
