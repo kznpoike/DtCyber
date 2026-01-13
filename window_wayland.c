@@ -294,8 +294,7 @@ static u8              clipToKeyboardDelay  = 0;
 static int             usageDisplayCount = 0;
 static bool            isMeta;
 static WlClientState   state;
-//static int             debugWayland = WAYDEBUG;
-static int             debugWayland = 1;
+static int             debugWayland = WAYDEBUG;
 
 /*--------------------------------------------------------------------------
 **  Pointer support constants
