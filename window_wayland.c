@@ -83,6 +83,7 @@
 #define FontCtrLarge     FontLarge / 2
 #define DPI              75.0
 #define MaxPline         255
+#define FrameTimesMax    20
 
 /*
 **  -----------------------
@@ -295,6 +296,9 @@ static int             usageDisplayCount = 0;
 static bool            isMeta;
 static WlClientState   state;
 static int             debugWayland = WAYDEBUG;
+//static int             debugWayland = 1;
+static uint32_t        frameTimes[FrameTimesMax];
+static int             frameTimesNdx = 0;
 
 /*--------------------------------------------------------------------------
 **  Pointer support constants
@@ -2320,7 +2324,24 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     {
     WlClientState *state = data;
     static bool sendPPChar = false;
-    wayDebug(2, LogErrorLocation, "Entering surface frame done at time = %d.\n", time);
+    wayDebug(2, LogErrorLocation, "Entering surface frame done at time = %u.\n", time);
+    frameTimes[frameTimesNdx] = time;
+    frameTimesNdx++;
+    if (frameTimesNdx == FrameTimesMax)
+        {
+        if (debugWayland > 0)
+            {
+            wayDebug(1, LogErrorLocation, "Frame refresh time stamps current %10u last %10u:\n",
+                time, state->lastFrame);
+	    wayDebug(1, LogErrorLocation, "%10u %10u %10u %10u %10u %10u %10u %10u %10u %10u\n",
+                frameTimes[0], frameTimes[1], frameTimes[2], frameTimes[3], frameTimes[4],
+                frameTimes[5], frameTimes[6], frameTimes[7], frameTimes[8], frameTimes[9]);
+	    wayDebug(1, LogErrorLocation, "%10u %10u %10u %10u %10u %10u %10u %10u %10u %10u\n",
+                frameTimes[10], frameTimes[11], frameTimes[12], frameTimes[13], frameTimes[14],
+                frameTimes[15], frameTimes[16], frameTimes[17], frameTimes[18], frameTimes[19]);
+            }
+        frameTimesNdx = 0;
+        }
 
     /*--------------------------------------------------------------------------
     **  Destroy the passed in callback because it can only be used once and
@@ -2352,12 +2373,26 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **  Delay if we have come back in less time. The returned time values are
     **  in increasing milliseconds but not necesssarily synchronized to the
     **  time if day clock.
+    **  We have a first frame problem with delay calculation, so enforce a 
+    **  maximum delay of 1000ms. This should be reasonable to any usage.
     **------------------------------------------------------------------------*/
-    int delay = time - state->lastFrame;
-    int waitTime = 20 - delay;
-    if (waitTime > 0)
+    uint32_t delay = time - state->lastFrame;
+    uint32_t waitTime = 20 - delay;
+    if ((waitTime > 0) && (waitTime < 1000))
         {
-        sleepMsec((u32)waitTime);
+        wayDebug(1, LogErrorLocation, "Waiting for %ums\n", waitTime);
+        //fprintf(stderr, "Waiting for %ums\n", waitTime);
+        struct timespec tr;
+        struct timespec ts;
+        ts.tv_sec  = waitTime / 1000;
+        ts.tv_nsec = (waitTime % 1000) * 1000000;
+        wayDebug(1, LogErrorLocation, "Timespec tv_sec = %d, tv_nsec = %d\n",
+            ts.tv_sec, ts.tv_nsec);
+        int ns = nanosleep(&ts, &tr);
+        if ( (ns == -1) && (errno == EINTR))
+            {
+            nanosleep(&tr, NULL);
+            }
         }
 
     /*--------------------------------------------------------------------------
@@ -3975,6 +4010,7 @@ void *windowThread(void *param)
     state.pasteActive = false;
     state.ddOfferedTextPlain = false;
     state.fadePixels = false;
+    state.lastFrame = 0;
 
     wayDebug(1, LogErrorLocation, "windowThread initial state setup done\n");
     /*--------------------------------------------------------------------------
