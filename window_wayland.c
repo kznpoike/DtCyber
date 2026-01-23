@@ -154,34 +154,6 @@ struct pointerEvent
     uint32_t axisSource;
     };
 
-enum touch_event_mask
-    {
-    TOUCH_EVENT_DOWN = 1 << 0,
-    TOUCH_EVENT_UP = 1 << 1,
-    TOUCH_EVENT_MOTION = 1 << 2,
-    TOUCH_EVENT_CANCEL = 1 << 3,
-    TOUCH_EVENT_SHAPE = 1 << 4,
-    TOUCH_EVENT_ORIENTATION = 1 << 5,
-    };
-
-struct touch_point
-    {
-    bool valid;
-    int32_t id;
-    uint32_t eventMask;
-    wl_fixed_t surfaceX, surfaceY;
-    wl_fixed_t major, minor;
-    wl_fixed_t orientation;
-    };
-
-struct touch_event
-    {
-    uint32_t eventMask;
-    uint32_t time;
-    uint32_t serial;
-    struct touch_point points[10];
-    };
-
 typedef struct wlClientState
     {
     /* Globals */
@@ -202,7 +174,6 @@ typedef struct wlClientState
     struct zxdg_toplevel_decoration_v1 *zxdgToplevelDecorationV1;
     struct wl_keyboard *wlKeyboard;
     struct wl_pointer *wlPointer;
-    struct wl_touch *wlTouch;
     /* State */
     uint32_t lastFrame;
     int width;
@@ -221,7 +192,6 @@ typedef struct wlClientState
     struct xkb_state *xkbState;
     struct xkb_context *xkbContext;
     struct xkb_keymap *xkbKeymap;
-    struct touch_event touchEvent;
     enum zxdg_toplevel_decoration_v1_mode decorationMode;
     /* Cursor support */
     struct wl_surface *cursorSurface;
@@ -3177,314 +3147,6 @@ const struct wl_keyboard_listener wlKeyboardListener =
     };
 
 /*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  Retrieve a touch point from our list keyed by the
-**                  supplied touch point identifier.
-**
-**                  Note that a single touch device may have many touch
-**                  points active simoultaneously (think of multi-finger
-**                  swiping). Hence we keep a structure to track specific
-**                  touch points. The code will arbitarily stop after 10
-**                  touch points.
-**
-**  Parameters:     Name        Description.
-**                  state       Our client state structure pointer.
-**                  id          The identifier of the desired touch point.
-**
-**  Returns:        A pointer to our local touch point data for the requested
-**                  identifier.
-**
-**------------------------------------------------------------------------*/
-struct touch_point *
-getTouchPoint(WlClientState *state, int32_t id)
-    {
-    struct touch_event *touch = &state->touchEvent;
-    const size_t nmemb = sizeof(touch->points) / sizeof(struct touch_point);
-    int invalid = -1;
-    for (size_t i = 0; i < nmemb; ++i)
-        {
-        if (touch->points[i].id == id)
-            {
-            return &touch->points[i];
-            }
-        if (invalid == -1 && !touch->points[i].valid)
-            {
-            invalid = i;
-            }
-        }
-    if (invalid == -1)
-        {
-        return NULL;
-        }
-    touch->points[invalid].valid = true;
-    touch->points[invalid].id = id;
-    return &touch->points[invalid];
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  This event communicates the creation of a new touch
-**                  point on an identified Wayland surface.
-**
-**  Parameters:     Name        Description.
-**                  data        Client state data pointer handed back to us.
-**                  wlTouch     Abstraction of the touch device.
-**                  serial      Event serial number.
-**                  time        A millisecond timestamp for this pointer
-**                              location.
-**                  surface     The Wayland surface up on which the x and y
-**                              co-ordinates are valid.
-**                  id          The touch point identifier just created.
-**                  x           The x location of the touch point.
-**                  y           The y location of the touch point.
-**
-**  Returns:        No return value.
-**
-**------------------------------------------------------------------------*/
-void
-wlTouchDown(void *data, struct wl_touch *wlTouch, uint32_t serial,
-               uint32_t time, struct wl_surface *surface, int32_t id,
-               wl_fixed_t x, wl_fixed_t y)
-    {
-    WlClientState *state = data;
-    struct touch_point *point = getTouchPoint(state, id);
-    if (point == NULL)
-        {
-        return;
-        }
-    point->eventMask |= TOUCH_EVENT_DOWN;
-    point->surfaceX = wl_fixed_to_double(x),
-    point->surfaceY = wl_fixed_to_double(y);
-    state->touchEvent.time = time;
-    state->touchEvent.serial = serial;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  This event communicates the deletion of a touch point
-**                  from an identified Wayland surface.
-**
-**  Parameters:     Name        Description.
-**                  data        Client state data pointer handed back to us.
-**                  wlTouch     Abstraction of the touch device.
-**                  serial      Event serial number.
-**                  time        A millisecond timestamp for this pointer
-**                              location.
-**                  id          The touch point identifier just created.
-**
-**  Returns:        No return value.
-**
-**------------------------------------------------------------------------*/
-void
-wlTouchUp(void *data, struct wl_touch *wlTouch, uint32_t serial,
-            uint32_t time, int32_t id)
-    {
-    WlClientState *state = data;
-    struct touch_point *point = getTouchPoint(state, id);
-    if (point == NULL)
-        {
-        return;
-        }
-    point->eventMask |= TOUCH_EVENT_UP;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  This event communicates the movement of a touch point
-**                  over it's Wayland surface.
-**
-**  Parameters:     Name        Description.
-**                  data        Client state data pointer handed back to us.
-**                  wlTouch     Abstraction of the touch device.
-**                  time        A millisecond timestamp for this pointer
-**                              location.
-**                  id          The touch point identifier just created.
-**                  x           The x location of the touch point.
-**                  y           The y location of the touch point.
-**
-**  Returns:        No return value.
-**
-**------------------------------------------------------------------------*/
-void
-wlTouchMotion(void *data, struct wl_touch *wlTouch, uint32_t time,
-               int32_t id, wl_fixed_t x, wl_fixed_t y)
-    {
-    WlClientState *state = data;
-    struct touch_point *point = getTouchPoint(state, id);
-    if (point == NULL)
-        {
-        return;
-        }
-    point->eventMask |= TOUCH_EVENT_MOTION;
-    point->surfaceX = x;
-    point->surfaceY = y;
-    state->touchEvent.time = time;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  This event communicates the end of focus for the touch
-**                  device on it's Wayland surface. Any existing touch 
-**                  points are invalidated.
-
-**
-**  Parameters:     Name        Description.
-**                  data        Client state data pointer handed back to us.
-**                  wlTouch     Abstraction of the touch device.
-**
-**  Returns:        No return value.
-**
-**------------------------------------------------------------------------*/
-void
-wlTouchCancel(void *data, struct wl_touch *wlTouch)
-    {
-    WlClientState *state = data;
-    state->touchEvent.eventMask |= TOUCH_EVENT_CANCEL;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  This event communicates an update to the ellipse defining
-**                  the shape of the touch area for a touch point.
-**
-**  Parameters:     Name        Description.
-**                  data        Client state data pointer handed back to us.
-**                  wlTouch     Abstraction of the touch device.
-**                  id          The identifier of the touch point.
-**                  major       The major axis length for the touch point.
-**                  minor       The minor axiz length for the touch point.
-**
-**  Returns:        No return value.
-**
-**------------------------------------------------------------------------*/
-void
-wlTouchShape(void *data, struct wl_touch *wlTouch,
-               int32_t id, wl_fixed_t major, wl_fixed_t minor)
-    {
-    WlClientState *state = data;
-    struct touch_point *point = getTouchPoint(state, id);
-    if (point == NULL)
-        {
-        return;
-        }
-    point->eventMask |= TOUCH_EVENT_SHAPE;
-    point->major = major;
-    point->minor = minor;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  This event communicates a change to the orientation of
-**                  the ellipse defining the shape of the touch area for
-**                  a touch point.
-**
-**  Parameters:     Name        Description.
-**                  data        Client state data pointer handed back to us.
-**                  wlTouch     Abstraction of the touch device.
-**                  id          The identifier of the touch point.
-**                  orientation The angle between the major axis and the
-**                              surface y-axis for the touch point.
-**
-**  Returns:        No return value.
-**
-**------------------------------------------------------------------------*/
-void
-wlTouchOrientation(void *data, struct wl_touch *wlTouch,
-                     int32_t id, wl_fixed_t orientation)
-    {
-    WlClientState *state = data;
-    struct touch_point *point = getTouchPoint(state, id);
-    if (point == NULL)
-        {
-        return;
-        }
-    point->eventMask |= TOUCH_EVENT_ORIENTATION;
-    point->orientation = orientation;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  This event communicates the end of a set of events
-**                  defining a logical touch action on a touch device.
-**
-**  Parameters:     Name        Description.
-**                  data        Client state data pointer handed back to us.
-**                  wlTouch     Abstraction of the touch device.
-**
-**  Returns:        No return value.
-**
-**------------------------------------------------------------------------*/
-void
-wlTouchFrame(void *data, struct wl_touch *wlTouch)
-    {
-    WlClientState *state = data;
-    struct touch_event *touch = &state->touchEvent;
-    const size_t nmemb = sizeof(touch->points) / sizeof(struct touch_point);
-    wayDebug(3, LogErrorLocation, "touch event @ %d:\n", touch->time);
-
-    for (size_t i = 0; i < nmemb; ++i)
-        {
-        struct touch_point *point = &touch->points[i];
-        if (!point->valid)
-            {
-                continue;
-            }
-//        logDtError(LogErrorLocation, "point %d: ", touch->points[i].id);
-
-        if (point->eventMask & TOUCH_EVENT_DOWN)
-            {
-//            logDtError(LogErrorLocation, "down %f,%f ",
-//                    wl_fixed_to_double(point->surfaceX),
-//                    wl_fixed_to_double(point->surfaceY));
-            }
-
-        if (point->eventMask & TOUCH_EVENT_UP)
-            {
-//            logDtError(LogErrorLocation, "up ");
-            }
-
-        if (point->eventMask & TOUCH_EVENT_MOTION)
-            {
-//            logDtError(LogErrorLocation, "motion %f,%f ",
-//                    wl_fixed_to_double(point->surfaceX),
-//                    wl_fixed_to_double(point->surfaceY));
-            }
-
-        if (point->eventMask & TOUCH_EVENT_SHAPE)
-            {
-//            logDtError(LogErrorLocation, "shape %fx%f ",
-//                    wl_fixed_to_double(point->major),
-//                    wl_fixed_to_double(point->minor));
-            }
-
-        if (point->eventMask & TOUCH_EVENT_ORIENTATION)
-            {
-//            logDtError(LogErrorLocation, "orientation %f ",
-//                    wl_fixed_to_double(point->orientation));
-            }
-
-        point->valid = false;
-//        logDtError(LogErrorLocation, "\n");
-        }
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Touch device event handling functions.
-**                  The listener structure that receives all incoming
-**                  touch device events.
-**
-**------------------------------------------------------------------------*/
-const struct wl_touch_listener wlTouchListener = {
-    .down = wlTouchDown,
-    .up = wlTouchUp,
-    .motion = wlTouchMotion,
-    .frame = wlTouchFrame,
-    .cancel = wlTouchCancel,
-    .shape = wlTouchShape,
-    .orientation = wlTouchOrientation,
-};
-
-/*--------------------------------------------------------------------------
 **  Purpose:        Wayland seat event handling functions.
 **                  The Wayland seat abstraction covers all input devices
 **                  available to the Wayland client from the Wayland
@@ -3500,7 +3162,7 @@ const struct wl_touch_listener wlTouchListener = {
 **                  capabilities A bit mask of available devices.
 **
 **  Returns:        No return value, however we initialize event handling
-**                  functionality for each available input device and clean
+**                  functionality for each desired input device and clean
 **                  up our support if an input device has disappeared..
 **
 **------------------------------------------------------------------------*/
@@ -3538,22 +3200,6 @@ wlSeatCapabilities(void *data, struct wl_seat *wlSeat, uint32_t capabilities)
         wayDebug(1, LogErrorLocation, "Removing keyboard input capability.\n");
         wl_keyboard_release(state->wlKeyboard);
         state->wlKeyboard = NULL;
-        }
-
-    bool have_touch = capabilities & WL_SEAT_CAPABILITY_TOUCH;
-
-    if (have_touch && state->wlTouch == NULL)
-        {
-        wayDebug(1, LogErrorLocation, "Adding touch input capability.\n");
-        state->wlTouch = wl_seat_get_touch(state->wlSeat);
-        wl_touch_add_listener(state->wlTouch,
-                &wlTouchListener, state);
-        }
-    else if (!have_touch && state->wlTouch != NULL)
-        {
-        wayDebug(1, LogErrorLocation, "Removing touch input capability.");
-        wl_touch_release(state->wlTouch);
-        state->wlTouch = NULL;
         }
     }
 
