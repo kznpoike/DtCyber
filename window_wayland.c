@@ -2356,7 +2356,7 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **  restarting the frame refresh processing once all resize operations are
     **  complete.
     **------------------------------------------------------------------------*/
-    if ((state->pendingWidth > 0) && (state->pendingHeight > 0))
+    if ((state->pendingWidth > 0) || (state->pendingHeight > 0))
         {
         wayDebug(2, LogErrorLocation, "SurfaceFrameDone entered with a pending resize.\n");
         wayDebug(2, LogErrorLocation, "  new width = %d, new height = %d.\n",
@@ -2517,13 +2517,15 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **------------------------------------------------------------------------*/
     if (state->image != NULL && state->fadePixels)
         {
+        float shiftF = ceilf((((time - state->lastFrame) * 1.0) / 40.0));
+        uint32_t shiftCnt = (uint32_t)shiftF & 0xFF;
         int height = state->height;
         int width = state->width;
         for (int y = 0; y < height; ++y)
             {
             for (int x = 0; x < width; ++x)
                 {
-                state->image[y * width + x].green = state->image[y * width + x].green >> 1;
+                state->image[y * width + x].green = state->image[y * width + x].green >> shiftCnt;
                 }
              }
         }
