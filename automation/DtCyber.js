@@ -209,9 +209,32 @@ class DtCyber {
   }
 
   /*
+   * findBunzip
+   *
+   * Find a bunzip executable if it exists.
+   *
+   * Returns:
+   *   Pathname of DtCyber executable, or null if not found
+   */
+  findBunzip() {
+    const paths = process.platform === "win32"
+      ? []
+      : ["/usr/bin/bunzip2"];
+    for (const path of paths) {
+      if (fs.existsSync(path)) return path;
+    }
+    return null;
+  }
+
+  /*
    * bunzip2
    *
    * Decompress a file that was comppressed using the BZIP2 algorithm.
+   * If the srcPath is for a file type supported sensibly by a platform
+   * bunzip2 command, and such a command if found, use that platform
+   * command. The platform command is MUCH more efficient than the basic
+   * node implementation. If no platform command is found fall back to
+   * the node implementation.
    *
    * Arguments:
    *   srcPath - pathname of compressed input file
@@ -222,18 +245,49 @@ class DtCyber {
    */
   bunzip2(srcPath, dstPath) {
     const me = this;
-    return new Promise((resolve, reject) => {
-      try {
-        let ws = fs.createWriteStream(dstPath);
-        ws.on("close", () => {
-          resolve(dstPath);
+    const command = this.findBunzip();
+    const fileTypes = [".bz2", ".bz", ".tbz2", ".tbz"];
+    let fileOK = false;
+    for (const fileType of fileTypes) {
+      if (`${srcPath}` === `${dstPath}${fileType}`) {
+        fileOK = true;
+      }
+    }
+    if (fileOK && command !== null) {
+      return new Promise((resolve, reject) => {
+        let options = {stdio: [0, 1, 2]};
+        let args = [ "-k", srcPath ];
+        const child = child_process.spawn(command, args, options);
+          child.on("exit", (code, signal) => {
+            if (signal !== null) {
+              reject(new Error(`${command} exited due to signal ${signal}`));
+            }
+            else if (code === 0) {
+              resolve();
+            }
+            else {
+              reject(new Error(`${command} exited with status ${code}`));
+            }
+          });
+          child.on("error", err => {
+            reject(err);
+          });
+      });
+    }
+    else {
+      return new Promise((resolve, reject) => {
+        try {
+          let ws = fs.createWriteStream(dstPath);
+          ws.on("close", () => {
+            resolve(dstPath);
+          });
+          fs.createReadStream(srcPath).pipe(bz2()).pipe(ws);
+        }
+        catch(err) {
+          reject(err);
+        }
         });
-        fs.createReadStream(srcPath).pipe(bz2()).pipe(ws);
-      }
-      catch(err) {
-        reject(err);
-      }
-    });
+    }
   }
 
   /*
@@ -588,7 +642,7 @@ class DtCyber {
       ui = jobName;
       hasUi = true;
     }
-    let list = [`SUI,${hasUi ? ui.toString() : "377777"}.`];
+    let list = [`#2000#SUI,${hasUi ? ui.toString() : "377777"}.`];
     if (!Array.isArray(commands)) {
       commands = [commands];
     }
