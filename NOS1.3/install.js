@@ -190,6 +190,7 @@ else {
     "CLEAR.",
     "ISF."
   ]))
+  .then(() => dtc.sleep(12000))
   .then(() => dtc.say("Create user INSTALL ..."))
   .then(() => dtc.dis([
     "MODVAL,OP=Z./INSTALL,PW=INSTALL,FUI=1,AW=ALL,MT=7",
@@ -250,6 +251,7 @@ else {
       "CLEAR.",
       "ISF."
     ]))
+    .then(() => dtc.sleep(12000))
     .then(() => dtc.say("Create user PLATO in family PLATO ..."))
     .then(() => dtc.dis([
       "FAMILY,PLATO.",
@@ -266,6 +268,11 @@ else {
     }))
     .then(() => clearProgress(maxProgressLen))
     .then(() => dtc.say("Decompress PLATO PFDUMP tape ..."))
+    .then(() => {
+      if (fs.existsSync("tapes/plato4nos13.tap")) {
+        fs.unlinkSync("tapes/plato4nos13.tap")
+      }
+    })
     .then(() => dtc.bunzip2("tapes/plato4nos13.tap.bz2", "tapes/plato4nos13.tap"))
     .then(() => dtc.say("Load PLATO PFDUMP tape on tape drive ..."))
     .then(() => dtc.dsd([
@@ -292,17 +299,23 @@ else {
     }))
     .then(() => clearProgress(maxProgressLen))
     .then(() => dtc.say("Decompress PLATO development tools PFDUMP tape ..."))
+    .then(() => {
+      if (fs.existsSync("tapes/platodv4nos13.tap")) {
+       fs.unlinkSync("tapes/platodv4nos13.tap")
+      }
+    })
     .then(() => dtc.bunzip2("tapes/platodv4nos13.tap.bz2", "tapes/platodv4nos13.tap"))
     .then(() => dtc.say("Load PLATO development tools PFDUMP tape on tape drive ..."))
     .then(() => dtc.dsd([
       "[UNLOAD,51.",
       "[!"
     ]))
-    .then(() => dtc.sleep(2000))
+    .then(() => dtc.sleep(20000))
     .then(() => dtc.mount(13, 0, 1, "tapes/platodv4nos13.tap"))
     .then(() => dtc.say("Create job to restore PLATO development tools ..."))
     .then(() => dtc.runJob(11, 4, "decks/upload-platodv-pfload.job"))
     .then(() => dtc.say("Run job to restore PLATO development tools ..."))
+    .then(() => dtc.sleep(20000))
     .then(() => dtc.dis([
       "GET,PFLPLDV.",
       "ROUTE,PFLPLDV,DC=IN,OT=SYOT."
