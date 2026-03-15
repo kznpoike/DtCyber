@@ -30,7 +30,7 @@ LDFLAGS = -s -L/usr/lib
 INCL    = -I/usr/include/freetype2 -I/usr/include/libpng16
 EXTRACFLAGS = -Wno-switch -Wno-format-security
 
-CFLAGS  = -O2 -I. $(INCL) -std=gnu99
+CFLAGS  = -O3 -I. $(INCL) -std=gnu99 -march=native
 
 HDRS    =   const.h                          \
             cyber_channel_linux.h            \
@@ -139,6 +139,7 @@ webterm/www/js/node_modules:
 
 clean:
 	rm -f *.o; \
+	rm dtcyber \
 	$(MAKE) -C automation clean; \
 	$(MAKE) -C rje-station clean; \
 	$(MAKE) -C stk clean; \
