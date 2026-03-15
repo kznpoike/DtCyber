@@ -228,9 +228,9 @@ typedef struct diskParam
     **  Memory mapped file support fields
     */
     u8               *baseAddr;
-    i32              maxOffset;
+    i32              maxOffset;   // Maximum zero based index into the memory array
     i32              currPos;
-    i32              flushCount;      // Used for interim asynchronous msync calls
+    i32              flushCount;  // Used for interim asynchronous msync calls
     } DiskParam;
 
 /*
@@ -629,13 +629,13 @@ void dd8xxUnloadDisk(char *params)
     /*
     **  Close the file.
     */
-    if (msync(dp->baseAddr, dp->maxOffset, MS_SYNC) == -1)
+    if (msync(dp->baseAddr, dp->maxOffset + 1, MS_SYNC) == -1)
         {
         sprintf(outBuf, "(dd8xx  ) Unit %d final synchronization failed code %d\n",
             unitNo, errno);
         opDisplay(outBuf);
         }
-    if (munmap(dp->baseAddr, dp->maxOffset) == -1)
+    if (munmap(dp->baseAddr, dp->maxOffset + 1) == -1)
         {
         sprintf(outBuf, "(dd8xx  ) Unit %d final unmap failed code %d\n",
             unitNo, errno);
@@ -914,8 +914,10 @@ static FILE *dd8xxMount(char *deviceName, DiskParam *dp)
             dp->cylinder = dp->size.maxCylinders - 1;
             dp->track    = dp->size.maxTracks - 1;
             dp->sector   = dp->size.maxSectors - 1;
-            if (dd8xxSeek(dp) != sb.st_size)
+            i32 lastOffset = dd8xxSeek(dp) + (SectorSize * 2);
+            if (lastOffset != sb.st_size)
                 {
+                logDtError(LogErrorLocation, "Backing file size mismatch wanting %d found %d", lastOffset, sb.st_size);
                 fclose(fcb);
                 fcb = NULL;
                 }
@@ -951,7 +953,7 @@ static FILE *dd8xxMount(char *deviceName, DiskParam *dp)
         /*
         ** Set up the memory mapping for the device
         */
-        dp->baseAddr = mmap(NULL, dp->maxOffset, PROT_READ | PROT_WRITE,
+        dp->baseAddr = mmap(NULL, dp->maxOffset + 1, PROT_READ | PROT_WRITE,
                             MAP_SHARED, fileno(fcb), 0);
         if (dp->baseAddr == MAP_FAILED)
             {
@@ -1026,7 +1028,7 @@ static FILE *dd8xxMount(char *deviceName, DiskParam *dp)
         /*
         ** Set up the memory mapping for the device
         */
-        dp->baseAddr = mmap(NULL, dp->maxOffset, PROT_READ | PROT_WRITE,
+        dp->baseAddr = mmap(NULL, dp->maxOffset + 1, PROT_READ | PROT_WRITE,
                             MAP_SHARED, fileno(fcb), 0);
         if (dp->baseAddr == MAP_FAILED)
             {

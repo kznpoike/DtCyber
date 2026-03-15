@@ -665,8 +665,9 @@ void mt669LoadTape(char *params)
         fcb = fopen(str, "r+b");
         if (fcb == NULL)
             {
-            logDtError(LogErrorLocation, "(mt669  ) Opening %s as r+b failed, trying w+b\n",
-                tp->fileName);
+#if DEBUG
+            fprintf(mt669Log, "(mt669  ) Opening %s as r+b failed, trying w+b\n", str);
+#endif
             fcb = fopen(str, "w+b");
             }
         if (fcb != NULL)
