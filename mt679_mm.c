@@ -3,11 +3,11 @@
 **  Copyright (c) 2003-2011, Tom Hunter
 **                2025, John Huntley - Implement memory mapped file support
 **
-**  Name: mt669.c
+**  Name: mt679.c
 **
 **  Description:
-**      Perform emulation of CDC 669 tape drives attached to a
-**      7021-21 magnetic tape controller.
+**      Perform emulation of CDC 6600 679 tape drives attached to a
+**      7021-31 magnetic tape controller.
 **
 **  This program is free software: you can redistribute it and/or modify
 **  it under the terms of the GNU General Public License version 3 as
@@ -44,7 +44,6 @@
 #include "types.h"
 #include "proto.h"
 
-
 /*
 **  -----------------
 **  Private Constants
@@ -52,165 +51,99 @@
 */
 
 /*
-**  MTS tape function codes:
-**  ========================
+**  ATS tape function codes:
 */
-
-/*
-**  Setup functions.
-*/
-#define Fc669FormatUnit               00030
-#define Fc669LoadConversion1          00131
-#define Fc669LoadConversion2          00231
-#define Fc669LoadConversion3          00331
-
-/*
-**  Unit reserve functions.
-*/
-#define Fc669Connect                  00020
-#define Fc669Release                  00001
-#define Fc669ClearReserve             00002
-#define Fc669ClearOppositeReserve     00003
-
-/*
-**  Unit manipulation functions.
-*/
-#define Fc669Rewind                   00010
-#define Fc669RewindUnload             00110
-#define Fc669SearchTapeMarkF          00015
-#define Fc669SearchTapeMarkB          00115
-#define Fc669CtrlForespaceFindGap     00214
-#define Fc669CtrlBackspaceFindGap     00314
-#define Fc669Forespace                00013
-#define Fc669Backspace                00113
-#define Fc669WriteTapeMark            00051
-#define Fc669EraseToEOT               00152
-#define Fc669CtrledForespace          00014
-#define Fc669CtrledBackspace          00114
-#define Fc669StopMotion               00011
-
-/*
-**  Read functions.
-*/
-#define Fc669ReadFwd                  00040
-#define Fc669ReadBkw                  00140
-
-/*
-**  Write functions.
-*/
-#define Fc669Write                    00050
-#define Fc669WriteOdd12               00150
-#define Fc669WriteOdd                 00250
-
-/*
-**  Status functions.
-*/
-#define Fc669GeneralStatus            00012
-#define Fc669DetailedStatus           00112
-#define Fc669CumulativeStatus         00212
-#define Fc669UnitReadyStatus          00312
-
-/*
-**  Non-motion read recovery functions.
-*/
-#define Fc669SetReadClipNorm          00006
-#define Fc669SetReadClipHigh          00106
-#define Fc669SetReadClipLow           00206
-#define Fc669SetReadClipHyper         00306
-#define Fc669ReadSprktDlyNorm         00007
-#define Fc669ReadSprktDlyIncr         00107
-#define Fc669ReadSprktDlyDecr         00207
-#define Fc669OppParity                00005
-#define Fc669OppDensity               00105
-
-/*
-**  Read error recovery functions.
-*/
-#define Fc669LongForespace            00213
-#define Fc669LongBackspace            00313
-#define Fc669RereadFwd                00041
-#define Fc669RereadBkw                00141
-#define Fc669ReadBkwOddLenParity      00340
-#define Fc669RereadBkwOddLenParity    00341
-#define Fc669RepeatRead               00042
-
-/*
-**  Write error recovery functions.
-*/
-#define Fc669Erase                    00052
-#define Fc669WriteRepos               00017
-#define Fc669WriteEraseRepos          00117
-#define Fc669WriteReposiCtrl          00217
-#define Fc669WriteEraseReposCtrl      00317
-#define Fc669EraseRepos               00016
-#define Fc669EraseEraseRepos          00116
-
-/*
-**  Diagnostic functions.
-*/
-#define Fc669LoadReadRam              00132
-#define Fc669LoadWriteRam             00232
-#define Fc669LoadReadWriteRam         00332
-#define Fc669CopyReadRam              00133
-#define Fc669CopyWriteRam             00233
-#define Fc669FormatTcuUnitStatus      00034
-#define Fc669CopyTcuStatus            00035
-#define Fc669SendTcuCmd               00036
-#define Fc669SetQuartReadSprktDly     00037
-
-/*
-**  Undocumented functions.
-*/
-#define Fc669ConnectRewindRead        00260
-#define Fc669MasterClear              00414
-#define Fc669ClearUnit                00000
-
+#define Fc679ClearUnit             00000
+#define Fc679Release               00001
+#define Fc679FormatUnit            00004
+#define Fc679OppositeParity        00005
+#define Fc679OppositeDensity       00105
+#define Fc679SetReadClipNorm       00006
+#define Fc679SetReadClipHigh       00106
+#define Fc679SetReadClipLow        00206
+#define Fc679SetReadClipHyper      00306
+#define Fc679Rewind                00010
+#define Fc679RewindUnload          00110
+#define Fc679StopMotion            00011
+#define Fc679GeneralStatus         00012
+#define Fc679DetailedStatus        00112
+#define Fc679UnitStatus            00212
+#define Fc679Forespace             00013
+#define Fc679Backspace             00113
+#define Fc679CtrledBackspace       00114
+#define Fc679SearchTapeMarkF       00015
+#define Fc679SearchTapeMarkB       00115
+#define Fc679Connect               00020
+#define Fc679WarmstartHighDens     00120
+#define Fc679WarmstartLowDens      00320
+#define Fc679ReadFwd               00040
+#define Fc679ReadBkw               00140
+#define Fc679CopyReadConv          00047
+#define Fc679CopyWriteConv         00247
+#define Fc679Write                 00050
+#define Fc679WriteShort            00250
+#define Fc679WriteTapeMark         00051
+#define Fc679Erase                 00052
+#define Fc679EraseDataSecurity     00252
+#define Fc679LoadReadConv          00057
+#define Fc679LoadWriteConv         00257
+#define Fc679RewindOnEOT           00060
+#define Fc679WaitForStop           00061
+#define Fc679TestVelocityVect      00071
+#define Fc679MeasureGapSizeFwd     00072
+#define Fc679MeasureGapSizeBkw     00172
+#define Fc679MeasureStartTFwd      00073
+#define Fc679SetTransferCheckCh    00074
+#define Fc679SetLoopWTRTcu         00075
+#define Fc679SetLoopWTR1TU         00175
+#define Fc679SetLoopWTR2TU         00275
+#define Fc679SetEvenWrParity       00076
+#define Fc679SetEvenChParity       00176
+#define Fc679ForceDataErrors       00077
+#define Fc679MasterClear           00414
 
 /*
 **  General status reply:
-**  =====================
 */
-#define St669Alert             04000
-#define St669NoUnit            01000
-#define St669WriteEnabled      00200
-#define St669NineTrack         00100
-#define St669OddCount          00040
-#define St669TapeMark          00020
-#define St669EOT               00010
-#define St669BOT               00004
-#define St669Busy              00002
-#define St669Ready             00001
+#define St679Alert                 04000
+#define St679NoUnit                01000
+#define St679WriteEnabled          00200
+#define St679NineTrack             00100
+#define St679CharacterFill         00040
+#define St679TapeMark              00020
+#define St679EOT                   00010
+#define St679BOT                   00004
+#define St679Busy                  00002
+#define St679Ready                 00001
 
 /*
-**  Detailed status error codes:
-**  ============================
+**  Detailed status error codes.
 */
-#define EcIllegalUnit          001
-#define EcUnitNotReady         004
-#define EcMissingRing          006
-#define EcBlankTape            010
-#define EcStopMotion           011          // alert bit not set
-#define EcBackPastLoadpoint    030
-#define EcIllegalFunction      050
-#define EcNoFuncParams         052
-#define EcMiscUnitError        047
+#define EcMissingRing              006
+#define EcBlankTape                010
+#define EcBackPastLoadpoint        030
+#define EcIllegalUnit              031
+#define EcIllegalFunction          050
+#define EcNoTapeUnitConnected      051
+#define EcNoFuncParams             052
+#define EcDiagnosticError          070
 
 /*
 **  Misc constants.
 */
-#define MaxPpBuf               40000
-#define MaxByteBuf             60000
-#define MaxPackedConvBuf       (((256 * 8) + 11) / 12)
-
+#define MaxPpBuf                   40000
+#define MaxByteBuf                 60000
+#define MaxPackedConvBuf           (((256 * 8) + 11) / 12)
 /*
 **  The following 2 constants define the maximum byte size of a 2400 ft
-**  tape reel operating at maximum 1600cpi. Because we are not writing 
+**  tape reel operating at maximum 6250. Because we are not writing 
 **  physical reels of tape, and the system supports files overflowing to
 **  multiple reels of tape, we define an arbitary maximum for the
 **  backing file size to emulate multi-reel files.
 */
-#define MaxTapeReel            ((1600 * 12) * 2400)
-#define MaxTapeSize            27 * MaxTapeReel
+#define MaxTapeReel            ((6250 * 12) * 2400)
+#define MaxTapeSize            7 * MaxTapeReel
+
 
 /*
 **  -----------------------
@@ -225,20 +158,28 @@
 */
 
 /*
-**  MTS controller.
+**  ATS controller.
 */
 typedef struct ctrlParam
     {
     FILE   *convFileHandle;
-    u8     readConv[3][256];
-    u8     writeConv[3][256];
-    PpWord deviceStatus[9];        // first element not used
-    PpWord excludedUnits;
+    u8     readConv[4][256];
+    u8     writeConv[4][256];
+    PpWord packedConv[MaxPackedConvBuf];
+
+    u8     selectedConversion;
+    bool   packedMode;
+    u8     density;
+    u8     minBlockLength;
+    bool   lwrMode;
     bool   writing;
+    bool   oddFrameCount;
+
+    PpWord controllerStatus[17];        // first element not used
     } CtrlParam;
 
 /*
-**  MTS tape unit.
+**  ATS tape unit.
 */
 typedef struct tapeParam
     {
@@ -252,46 +193,35 @@ typedef struct tapeParam
     char             fileName[MaxFSPath];
 
     /*
-    **  Format parameters.
-    */
-    u8               selectedConversion;
-    bool             packedMode;
-    u8               assemblyMode;
-    u8               density;
-    u8               minBlockLength;
-
-    /*
-    **  Tape status variables.
+    **  Dynamic state.
     */
     bool             alert;
     bool             endOfTape;
     bool             fileMark;
     bool             unitReady;
     bool             ringIn;
-    bool             oddCount;
+    bool             characterFill;
     bool             flagBitDetected;
     bool             rewinding;
     bool             suppressBot;
     u32              rewindStart;
     u16              blockCrc;
     u8               errorCode;
-    u32              blockNo;
 
-    /*
-    **  I/O buffer.
-    */
-    PpWord           frameCount;
+    u32              blockNo;
     PpWord           recordLength;
+    PpWord           deviceStatus[17]; // first element not used
     PpWord           ioBuffer[MaxPpBuf];
     PpWord           *bp;
+
     /*
     **  Memory mapped file support fields
     */
     u8               *baseAddr;
     i32              maxOffset;
     i32              currPos;
-    i32              flushCount;      // Used for interim asynchronous msync calls
-    bool             tapeDirty;
+    i32              flushCount; // Used for interim asynchronous msync calls
+    i32              logicalEOT;
     } TapeParam;
 
 /*
@@ -299,21 +229,22 @@ typedef struct tapeParam
 **  Private Function Prototypes
 **  ---------------------------
 */
-static void mt669ResetStatus(TapeParam *tp);
-static void mt669SetupGeneralStatus(TapeParam *tp);
-static void mt669SetupDetailedStatus(TapeParam *tp);
-static void mt669SetupCumulativeStatus(TapeParam *tp);
-static void mt669SetupUnitReadyStatus(void);
-static FcStatus mt669Func(PpWord funcCode);
-static void mt669Io(void);
-static void mt669Activate(void);
-static void mt669Disconnect(void);
-static void mt669PackAndConvert(u32 recLen);
-static void mt669FuncRead(void);
-static void mt669FuncForespace(void);
-static void mt669FuncBackspace(void);
-static void mt669FuncReadBkw(void);
-static char *mt669Func2String(PpWord funcCode);
+static void mt679ResetStatus(TapeParam *tp);
+static void mt679SetupStatus(TapeParam *tp);
+static void mt679PackConversionTable(u8 *convTable);
+static void mt679UnpackConversionTable(u8 *convTable);
+static void mt679Unpack6BitTable(u8 *convTable);
+static FcStatus mt679Func(PpWord funcCode);
+static void mt679Io(void);
+static void mt679Activate(void);
+static void mt679Disconnect(void);
+static void mt679FlushWrite(void);
+static void mt679PackAndConvert(u32 recLen);
+static void mt679FuncRead(void);
+static void mt679FuncForespace(void);
+static void mt679FuncBackspace(void);
+static void mt679FuncReadBkw(void);
+static char *mt679Func2String(PpWord funcCode);
 
 /*
 **  ----------------
@@ -331,7 +262,7 @@ static TapeParam *lastTape  = NULL;
 static u8        rawBuffer[MaxByteBuf];
 
 #if DEBUG
-static FILE *mt669Log = NULL;
+static FILE *mt679Log = NULL;
 #endif
 
 /*
@@ -342,7 +273,7 @@ static FILE *mt669Log = NULL;
  **--------------------------------------------------------------------------
  */
 /*--------------------------------------------------------------------------
-**  Purpose:        Initialise 669 tape drives.
+**  Purpose:        Initialise 679 tape drives.
 **
 **  Parameters:     Name        Description.
 **                  eqNo        equipment number
@@ -353,33 +284,31 @@ static FILE *mt669Log = NULL;
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
+void mt679Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
     {
     DevSlot   *dp;
     FILE      *fcb;
     TapeParam *tp;
 
-    (void)eqNo;
-
 #if DEBUG
-    if (mt669Log == NULL)
+    if (mt679Log == NULL)
         {
-        mt669Log = fopen("mt669log.txt", "wt");
+        mt679Log = fopen("mt679log.txt", "wt");
         }
 #endif
 
     /*
     **  Attach device to channel.
     */
-    dp = channelAttach(channelNo, eqNo, DtMt669);
+    dp = channelAttach(channelNo, eqNo, DtMt679);
 
     /*
     **  Setup channel functions.
     */
-    dp->activate     = mt669Activate;
-    dp->disconnect   = mt669Disconnect;
-    dp->func         = mt669Func;
-    dp->io           = mt669Io;
+    dp->activate     = mt679Activate;
+    dp->disconnect   = mt679Disconnect;
+    dp->func         = mt679Func;
+    dp->io           = mt679Io;
     dp->selectedUnit = -1;
 
     /*
@@ -400,7 +329,7 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
             /*
             **  Try to open existing backing file.
             */
-            sprintf(fileName, "%s/mt669StoreC%02oE%02o", persistDir, channelNo, eqNo);
+            sprintf(fileName, "%s/mt679StoreC%02oE%02o", persistDir, channelNo, eqNo);
             cp->convFileHandle = fopen(fileName, "r+b");
             if (cp->convFileHandle != NULL)
                 {
@@ -408,11 +337,13 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
                 **  Read conversion table contents.
                 */
                 if ((fread(cp->writeConv, 1, sizeof(cp->writeConv), cp->convFileHandle) != sizeof(cp->writeConv))
-                    || (fread(cp->readConv, 1, sizeof(cp->readConv), cp->convFileHandle) != sizeof(cp->readConv)))
+                    || (fread(cp->readConv, 1, sizeof(cp->readConv), cp->convFileHandle) != sizeof(cp->readConv))
+                    || (fread(cp->packedConv, 1, sizeof(cp->packedConv), cp->convFileHandle) != sizeof(cp->packedConv)))
                     {
-                    printf("(mt669  ) Unexpected length of MT669 backing file, clearing tables\n");
+                    printf("(mt679  ) Unexpected length of MT679 backing file, clearing tables\n");
                     memset(cp->writeConv, 0, sizeof(cp->writeConv));
                     memset(cp->readConv, 0, sizeof(cp->readConv));
+                    memset(cp->packedConv, 0, sizeof(cp->packedConv));
                     }
                 }
             else
@@ -423,7 +354,7 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
                 cp->convFileHandle = fopen(fileName, "w+b");
                 if (cp->convFileHandle == NULL)
                     {
-                    logDtError(LogErrorLocation, "Failed to create MT669 backing file\n");
+                    logDtError(LogErrorLocation, "Failed to create MT679 backing file\n");
                     exit(1);
                     }
                 }
@@ -436,7 +367,7 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
     tp = calloc(1, sizeof(TapeParam));
     if (tp == NULL)
         {
-        logDtError(LogErrorLocation, "Failed to allocate MT669 context block\n");
+        logDtError(LogErrorLocation, "Failed to allocate MT679 context block\n");
         exit(1);
         }
 
@@ -470,10 +401,14 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
             }
 
         dp->fcb[unitNo] = fcb;
+
+        /*
+        **  Initialize the memory map to the size of the container.
+        */
         struct stat sb;
         if (fstat(fileno(fcb), &sb) == -1)
             {
-            logDtError(LogErrorLocation, "(mt669  ) Unable to get status for %s with error code %d\n",
+            logDtError(LogErrorLocation, "(mt679  ) Unable to get status for %s with error code %d\n",
                 tp->fileName, errno);
             tp->baseAddr = NULL;
             tp->maxOffset = 0;
@@ -492,7 +427,7 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
                             MAP_SHARED, fileno(fcb), 0);
         if (tp->baseAddr == MAP_FAILED)
             {
-            logDtError(LogErrorLocation, "(mt669  ) Failed to map %s with error code %d\n",
+            logDtError(LogErrorLocation, "(mt679  ) Failed to map %s with error code %d\n",
                 tp->fileName, errno);
             tp->baseAddr = NULL;
             tp->maxOffset = 0;
@@ -525,12 +460,11 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
     /*
     **  Print a friendly message.
     */
-    printf("(mt669  ) Initialised on channel %o equipment %o unit %o\n", channelNo, eqNo, unitNo);
+    printf("(mt679  ) Initialised on channel %o equipment %o unit %o\n", channelNo, eqNo, unitNo);
     }
 
 /*--------------------------------------------------------------------------
-**  Purpose:        Terminate All Devices on this DevSlot.
-**                  Optionally Save Conversion Tables
+**  Purpose:        Optionally persist conversion tables.
 **
 **  Parameters:     Name        Description.
 **                  dp          Device pointer.
@@ -538,7 +472,7 @@ void mt669Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-void mt669Terminate(DevSlot *dp)
+void mt679Terminate(DevSlot *dp)
     {
     CtrlParam *cp = dp->controllerContext;
 
@@ -549,9 +483,10 @@ void mt669Terminate(DevSlot *dp)
         {
         fseek(cp->convFileHandle, 0, SEEK_SET);
         if ((fwrite(cp->writeConv, 1, sizeof(cp->writeConv), cp->convFileHandle) != sizeof(cp->writeConv))
-            || (fwrite(cp->readConv, 1, sizeof(cp->readConv), cp->convFileHandle) != sizeof(cp->readConv)))
+            || (fwrite(cp->readConv, 1, sizeof(cp->readConv), cp->convFileHandle) != sizeof(cp->readConv))
+            || (fwrite(cp->packedConv, 1, sizeof(cp->packedConv), cp->convFileHandle) != sizeof(cp->packedConv)))
             {
-            logDtError(LogErrorLocation, "Error writing MT669 backing file\n");
+            logDtError(LogErrorLocation, "Error writing MT679 backing file\n");
             }
 
         fclose(cp->convFileHandle);
@@ -568,7 +503,7 @@ void mt669Terminate(DevSlot *dp)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-void mt669LoadTape(char *params)
+void mt679LoadTape(char *params)
     {
     static char str[200];
     DevSlot     *dp;
@@ -592,35 +527,35 @@ void mt669LoadTape(char *params)
     */
     if (numParam != 5)
         {
-        opDisplay("(mt669  ) Not enough or invalid parameters\n");
+        opDisplay("(mt679  ) Not enough or invalid parameters\n");
 
         return;
         }
 
     if ((channelNo < 0) || (channelNo >= MaxChannels))
         {
-        opDisplay("(mt669  ) Invalid channel no\n");
+        opDisplay("(mt679  ) Invalid channel no\n");
 
         return;
         }
 
     if ((unitNo < 0) || (unitNo >= MaxUnits))
         {
-        opDisplay("(mt669  ) Invalid unit no\n");
+        opDisplay("(mt679  ) Invalid unit no\n");
 
         return;
         }
 
     if ((unitMode != 'w') && (unitMode != 'r'))
         {
-        opDisplay("(mt669  ) Invalid ring mode (r/w)\n");
+        opDisplay("(mt679  ) Invalid ring mode (r/w)\n");
 
         return;
         }
 
     if (str[0] == 0)
         {
-        opDisplay("(mt669  ) Invalid file name\n");
+        opDisplay("(mt679  ) Invalid file name\n");
 
         return;
         }
@@ -628,7 +563,7 @@ void mt669LoadTape(char *params)
     /*
     **  Locate the device control block.
     */
-    dp = channelFindDevice((u8)channelNo, DtMt669);
+    dp = channelFindDevice((u8)channelNo, DtMt679);
     if (dp == NULL)
         {
         return;
@@ -640,7 +575,7 @@ void mt669LoadTape(char *params)
     tp = (TapeParam *)dp->context[unitNo];
     if (tp == NULL)
         {
-        sprintf(outBuf, "(mt669  ) Unit %d not allocated\n", unitNo);
+        sprintf(outBuf, "(mt679  ) Unit %d not allocated\n", unitNo);
         opDisplay(outBuf);
 
         return;
@@ -651,7 +586,7 @@ void mt669LoadTape(char *params)
     */
     if (dp->fcb[unitNo] != NULL)
         {
-        sprintf(outBuf, "(mt669  ) Unit %d not unloaded\n", unitNo);
+        sprintf(outBuf, "(mt679  ) Unit %d not unloaded\n", unitNo);
         opDisplay(outBuf);
 
         return;
@@ -665,9 +600,7 @@ void mt669LoadTape(char *params)
         fcb = fopen(str, "r+b");
         if (fcb == NULL)
             {
-#if DEBUG
-            fprintf(mt669Log, "(mt669  ) Opening %s as r+b failed, trying w+b\n", str);
-#endif
+            logDtError(LogErrorLocation, "(mt679  ) Opening %s as r+b failed, trying w+b\n", str);
             fcb = fopen(str, "w+b");
             }
         if (fcb != NULL)
@@ -703,11 +636,12 @@ void mt669LoadTape(char *params)
     */
     if (fcb == NULL)
         {
-        sprintf(outBuf, "(mt669  ) Failed to open %s\n", str);
+        sprintf(outBuf, "(mt679  ) Failed to open %s\n", str);
         opDisplay(outBuf);
 
         return;
         }
+
     /*
     ** Set up the memory mapping for the device
     */
@@ -727,7 +661,7 @@ void mt669LoadTape(char *params)
         return;
         }
 #if DEBUG
-        fprintf(mt669Log, "(mt669  ) Loaded, opened and mapped %s\n", tp->fileName);
+        fprintf(mt669Log, "(mt679  ) Loaded, opened and mapped %s\n", tp->fileName);
 #endif
 
     /*
@@ -738,12 +672,12 @@ void mt669LoadTape(char *params)
     /*
     **  Setup status.
     */
-    mt669ResetStatus(tp);
+    mt679ResetStatus(tp);
     tp->ringIn    = unitMode == 'w';
     tp->blockNo   = 0;
     tp->unitReady = TRUE;
 
-    sprintf(outBuf, "(mt669  ) Successfully loaded %s\n", str);
+    sprintf(outBuf, "(mt679  ) Successfully loaded %s\n", str);
     opDisplay(outBuf);
     }
 
@@ -756,7 +690,7 @@ void mt669LoadTape(char *params)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-void mt669UnloadTape(char *params)
+void mt679UnloadTape(char *params)
     {
     DevSlot   *dp;
     int       numParam;
@@ -764,7 +698,7 @@ void mt669UnloadTape(char *params)
     int       equipmentNo;
     int       unitNo;
     TapeParam *tp;
-    char      outBuf[100];
+    char      outBuf[400];
 
     /*
     **  Operator inserted a new tape.
@@ -776,21 +710,21 @@ void mt669UnloadTape(char *params)
     */
     if (numParam != 3)
         {
-        opDisplay("(mt669  ) Not enough or invalid parameters\n");
+        opDisplay("(mt679  ) Not enough or invalid parameters\n");
 
         return;
         }
 
     if ((channelNo < 0) || (channelNo >= MaxChannels))
         {
-        opDisplay("(mt669  ) Invalid channel no\n");
+        opDisplay("(mt679  ) Invalid channel no\n");
 
         return;
         }
 
     if ((unitNo < 0) || (unitNo >= MaxUnits2))
         {
-        opDisplay("(mt669  ) Invalid unit no\n");
+        opDisplay("(mt679  ) Invalid unit no\n");
 
         return;
         }
@@ -798,7 +732,7 @@ void mt669UnloadTape(char *params)
     /*
     **  Locate the device control block.
     */
-    dp = channelFindDevice((u8)channelNo, DtMt669);
+    dp = channelFindDevice((u8)channelNo, DtMt679);
     if (dp == NULL)
         {
         return;
@@ -810,7 +744,7 @@ void mt669UnloadTape(char *params)
     tp = (TapeParam *)dp->context[unitNo];
     if (tp == NULL)
         {
-        sprintf(outBuf, "(mt669  ) Unit %d not allocated\n", unitNo);
+        sprintf(outBuf, "(mt679  ) Unit %d not allocated\n", unitNo);
         opDisplay(outBuf);
 
         return;
@@ -821,7 +755,7 @@ void mt669UnloadTape(char *params)
     */
     if (dp->fcb[unitNo] == NULL)
         {
-        sprintf(outBuf, "(mt669  ) Unit %d not loaded\n", unitNo);
+        sprintf(outBuf, "(mt679  ) Unit %d not loaded\n", unitNo);
         opDisplay(outBuf);
 
         return;
@@ -832,13 +766,13 @@ void mt669UnloadTape(char *params)
     */
     if (msync(tp->baseAddr, tp->maxOffset + 1, MS_SYNC) == -1)
         {
-        sprintf(outBuf, "(mt669  ) Unit %d final synchronization failed code %d\n",
+        sprintf(outBuf, "(mt679  ) Unit %d final synchronization failed code %d\n",
             unitNo, errno);
         opDisplay(outBuf);
         }
     if (munmap(tp->baseAddr, tp->maxOffset + 1) == -1)
         {
-        sprintf(outBuf, "(mt669  ) Unit %d final unmap failed code %d\n",
+        sprintf(outBuf, "(mt679  ) Unit %d final unmap failed code %d\n",
             unitNo, errno);
         opDisplay(outBuf);
         }
@@ -849,14 +783,14 @@ void mt669UnloadTape(char *params)
         */
         if (ftruncate(fileno(dp->fcb[unitNo]), (tp->currPos + 1)) == -1)
             {
-            sprintf(outBuf, "(mt669  ) Unit %d final truncate failed code %d\n",
+            sprintf(outBuf, "(mt679  ) Unit %d final truncate failed code %d\n",
                 unitNo, errno);
             opDisplay(outBuf);
             }
         else
             {
             fflush(dp->fcb[unitNo]);
-            logError(LogErrorLocation, "(mt669  ) Unit %d truncated to size %d\n",
+            logError(LogErrorLocation, "(mt679  ) Unit %d truncated to size %d\n",
                 unitNo, tp->currPos + 1);
             }
         }
@@ -874,7 +808,7 @@ void mt669UnloadTape(char *params)
     /*
     **  Setup status.
     */
-    mt669ResetStatus(tp);
+    mt679ResetStatus(tp);
     tp->unitReady   = FALSE;
     tp->ringIn      = FALSE;
     tp->rewinding   = FALSE;
@@ -882,7 +816,7 @@ void mt669UnloadTape(char *params)
     tp->blockCrc    = 0;
     tp->blockNo     = 0;
 
-    sprintf(outBuf, "(mt669  ) Successfully unloaded MT669 on channel %o equipment %o unit %o\n", channelNo, equipmentNo, unitNo);
+    sprintf(outBuf, "(mt679  ) Successfully unloaded MT679 on channel %o equipment %o unit %o\n", channelNo, equipmentNo, unitNo);
     opDisplay(outBuf);
     }
 
@@ -895,14 +829,14 @@ void mt669UnloadTape(char *params)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-void mt669ShowTapeStatus()
+void mt679ShowTapeStatus()
     {
     TapeParam *tp = firstTape;
     char      outBuf[MaxFSPath + 128];
 
     while (tp)
         {
-        sprintf(outBuf, "    >   %-8s C%02o E%02o U%02o", "669", tp->channelNo, tp->eqNo, tp->unitNo);
+        sprintf(outBuf, "    >   %-8s C%02o E%02o U%02o", "679", tp->channelNo, tp->eqNo, tp->unitNo);
         opDisplay(outBuf);
         if (tp->unitReady)
             {
@@ -934,14 +868,14 @@ void mt669ShowTapeStatus()
 **  Returns:        Nothing
 **
 **------------------------------------------------------------------------*/
-static void mt669ResetStatus(TapeParam *tp)
+static void mt679ResetStatus(TapeParam *tp)
     {
     if (tp != NULL)
         {
         tp->alert           = FALSE;
         tp->endOfTape       = FALSE;
         tp->fileMark        = FALSE;
-        tp->oddCount        = FALSE;
+        tp->characterFill   = FALSE;
         tp->flagBitDetected = FALSE;
         tp->suppressBot     = FALSE;
         tp->errorCode       = 0;
@@ -949,7 +883,7 @@ static void mt669ResetStatus(TapeParam *tp)
     }
 
 /*--------------------------------------------------------------------------
-**  Purpose:        Setup general status based on current tape parameters.
+**  Purpose:        Setup device status based on current tape parameters.
 **
 **  Parameters:     Name        Description.
 **                  tp          pointer to tape parameters
@@ -957,218 +891,298 @@ static void mt669ResetStatus(TapeParam *tp)
 **  Returns:        Nothing
 **
 **------------------------------------------------------------------------*/
-static void mt669SetupGeneralStatus(TapeParam *tp)
+static void mt679SetupStatus(TapeParam *tp)
     {
     CtrlParam *cp = activeDevice->controllerContext;
 
-    if (tp == NULL)
+    if (tp != NULL)
         {
-        cp->deviceStatus[1] = St669NineTrack;
-        cp->deviceStatus[2] = 0;
+        tp->deviceStatus[0] = 0;        // unused
 
-        return;
-        }
+        /*
+        **  General status.
+        */
+        tp->deviceStatus[1] = St679NineTrack;
 
-    cp->deviceStatus[1] = St669NineTrack;
-
-    if (tp->alert)
-        {
-        cp->deviceStatus[1] |= St669Alert;
-        }
-
-    if (tp->ringIn)
-        {
-        cp->deviceStatus[1] |= St669WriteEnabled;
-        }
-
-    if (tp->oddCount)
-        {
-        cp->deviceStatus[1] |= St669OddCount;
-        }
-
-    if (tp->fileMark)
-        {
-        cp->deviceStatus[1] |= St669TapeMark;
-        }
-
-    if (tp->endOfTape)
-        {
-        cp->deviceStatus[1] |= St669EOT;
-        }
-
-    if (tp->rewinding)
-        {
-        cp->deviceStatus[1] |= St669Busy;
-        if (cycles - tp->rewindStart > 1000)
+        if (tp->alert)
             {
-            tp->rewinding = FALSE;
-            tp->blockNo   = 0;
+            tp->deviceStatus[1] |= St679Alert;
             }
-        }
-    else
-        {
-        if ((tp->blockNo == 0) && !tp->suppressBot)
+
+        if (tp->ringIn)
             {
-            cp->deviceStatus[1] |= St669BOT;
+            tp->deviceStatus[1] |= St679WriteEnabled;
+            }
+
+        if (tp->characterFill)
+            {
+            tp->deviceStatus[1] |= St679CharacterFill;
+            }
+
+        if (tp->fileMark)
+            {
+            tp->deviceStatus[1] |= St679TapeMark;
+            }
+
+        if (tp->endOfTape)
+            {
+            tp->deviceStatus[1] |= St679EOT;
+            }
+
+        if (tp->rewinding)
+            {
+            tp->deviceStatus[1] |= St679Busy;
+            if (cycles - tp->rewindStart > 1000)
+                {
+                tp->rewinding = FALSE;
+                tp->blockNo   = 0;
+                }
+            }
+        else
+            {
+            if ((tp->blockNo == 0) && !tp->suppressBot)
+                {
+                tp->deviceStatus[1] |= St679BOT;
+                }
             }
 
         if (tp->unitReady)
             {
-            cp->deviceStatus[1] |= St669Ready;
+            tp->deviceStatus[1] |= St679Ready;
+            //if (ftell(activeDevice->fcb[activeDevice->selectedUnit]) > MaxTapeSize)
             if (tp->currPos > MaxTapeSize)
                 {
-                cp->deviceStatus[1] |= St669EOT;
+                tp->deviceStatus[1] |= St679EOT;
                 }
             }
-        }
 
-    cp->deviceStatus[2] = (tp->blockCrc & Mask9) << 3;
-    }
+        tp->deviceStatus[2] = (tp->blockCrc & Mask9) << 3;
 
-/*--------------------------------------------------------------------------
-**  Purpose:        Setup detailed status based on current tape parameters.
-**
-**  Parameters:     Name        Description.
-**                  tp          pointer to tape parameters
-**
-**  Returns:        Nothing
-**
-**------------------------------------------------------------------------*/
-static void mt669SetupDetailedStatus(TapeParam *tp)
-    {
-    CtrlParam *cp = activeDevice->controllerContext;
+        /*
+        **  Detailed status.
+        */
+        tp->deviceStatus[3] = tp->errorCode;
+        tp->deviceStatus[5] = 0;
 
-    if (tp == NULL)
-        {
-        cp->deviceStatus[1] = 0;
-        cp->deviceStatus[2] = 0;
-        cp->deviceStatus[3] = 0;
-        cp->deviceStatus[4] = 0;
-        cp->deviceStatus[5] = 0;
-        cp->deviceStatus[6] = 0;
-        cp->deviceStatus[7] = 0;
-        cp->deviceStatus[8] = 0;
-
-        return;
-        }
-
-    cp->deviceStatus[1] = tp->errorCode;
-    cp->deviceStatus[2] = 0;
-    cp->deviceStatus[3] = 0;
-
-    if (tp->flagBitDetected)
-        {
-        cp->deviceStatus[3] |= 1 << 5;
-        }
-
-    if (tp->oddCount)
-        {
-        cp->deviceStatus[3] |= 1 << 10;
-        }
-
-    cp->deviceStatus[4] = 0;
-
-    /*
-    **  Report: forward tape motion, speed=100 ips, density=1600 cpi
-    **  and configured unit number.
-    */
-    cp->deviceStatus[5] = 00600 + activeDevice->selectedUnit;
-
-    cp->deviceStatus[6] = 0;
-
-    /*
-    **  24 bit last read frame count or zero if last operation was a
-    **  successful write.
-    */
-    cp->deviceStatus[7] = (tp->frameCount >> 12) & Mask12;
-    cp->deviceStatus[8] = (tp->frameCount >> 0) & Mask12;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Setup cumulative status based on current tape parameters.
-**
-**  Parameters:     Name        Description.
-**                  tp          pointer to tape parameters
-**
-**  Returns:        Nothing
-**
-**------------------------------------------------------------------------*/
-static void mt669SetupCumulativeStatus(TapeParam *tp)
-    {
-    CtrlParam *cp = activeDevice->controllerContext;
-
-    if (tp == NULL)
-        {
-        cp->deviceStatus[1] = 0;
-        cp->deviceStatus[2] = 0;
-        cp->deviceStatus[3] = 0;
-        cp->deviceStatus[4] = 0;
-        cp->deviceStatus[5] = 0;
-        cp->deviceStatus[6] = 0;
-        cp->deviceStatus[7] = 0;
-        cp->deviceStatus[8] = 0;
-
-        return;
-        }
-
-    /*
-    **  Report: forward tape motion, speed=100 ips, density=1600 cpi
-    **  and configured unit number.
-    */
-    cp->deviceStatus[1] = 00600 + activeDevice->selectedUnit;
-    cp->deviceStatus[2] = activeDevice->selectedUnit << 8;
-    cp->deviceStatus[3] = 0;
-    cp->deviceStatus[4] = 0;
-    cp->deviceStatus[5] = 0;
-    cp->deviceStatus[6] = 0;
-    cp->deviceStatus[7] = 0;
-    cp->deviceStatus[8] = 0;
-    }
-
-/*--------------------------------------------------------------------------
-**  Purpose:        Setup all tape unit's ready status.
-**
-**  Parameters:     Name        Description.
-**
-**  Returns:        Nothing
-**
-**------------------------------------------------------------------------*/
-static void mt669SetupUnitReadyStatus(void)
-    {
-    CtrlParam *cp = activeDevice->controllerContext;
-    TapeParam *tp;
-    PpWord    s = 0;
-    u8        unitNo;
-
-    for (unitNo = 0; unitNo < 8; unitNo++)
-        {
-        tp = (TapeParam *)activeDevice->context[unitNo];
-        if ((tp != NULL) && tp->unitReady)
+        if (tp->flagBitDetected)
             {
-            if (tp->rewinding)
-                {
-                /*
-                **  Unit is not ready while rewinding.
-                */
-                if (cycles - tp->rewindStart > 1000)
-                    {
-                    tp->rewinding = FALSE;
-                    tp->blockNo   = 0;
-                    }
-                }
-            else
-                {
-                s |= 1 << unitNo;
-                }
+            tp->deviceStatus[5] |= 00004;
             }
-        }
 
-    cp->deviceStatus[1] = 0;
-    cp->deviceStatus[2] = s & cp->excludedUnits;
+        tp->deviceStatus[6] = 0;
+        tp->deviceStatus[7] = 0;
+
+        tp->deviceStatus[8] = 0;
+
+        if (cp->packedMode)
+            {
+            tp->deviceStatus[8] |= 01000;
+            }
+
+        if (cp->selectedConversion != 0)
+            {
+            tp->deviceStatus[8] |= 02000;
+            }
+
+        tp->deviceStatus[9]  = 0;
+        tp->deviceStatus[10] = 0500;
+
+        /*
+        **  Unit status.
+        */
+        tp->deviceStatus[11] = 04072;       // GCR, dual density, 6250 cpi, 100 ips
+        tp->deviceStatus[12] = 0;
+        tp->deviceStatus[13] = 00043;       // parked + cartridge open and present
+        tp->deviceStatus[14] = 00132;       // auto hub activated, tape present & loaded
+        tp->deviceStatus[15] = 0;
+        tp->deviceStatus[16] = 00040;       // IBG counter
+        }
+    else
+        {
+        /*
+        **  General status.
+        */
+        cp->controllerStatus[0] = 0;
+        cp->controllerStatus[1] = St679NoUnit | St679NineTrack;
+        cp->controllerStatus[2] = 0;
+
+        /*
+        **  Detailed status.
+        */
+        cp->controllerStatus[3] = 0;
+        cp->controllerStatus[5] = 0;
+        cp->controllerStatus[6] = 0;
+        cp->controllerStatus[7] = 0;
+
+        cp->controllerStatus[8] = 01000;
+
+        if (cp->selectedConversion != 0)
+            {
+            cp->controllerStatus[8] |= 02000;
+            }
+
+        cp->controllerStatus[9]  = 0;
+        cp->controllerStatus[10] = 0500;
+
+        /*
+        **  Unit status.
+        */
+        cp->controllerStatus[11] = 0;
+        cp->controllerStatus[12] = 0;
+        cp->controllerStatus[13] = 0;
+        cp->controllerStatus[14] = 0;
+        cp->controllerStatus[15] = 0;
+        cp->controllerStatus[16] = 0;
+        }
     }
 
 /*--------------------------------------------------------------------------
-**  Purpose:        Execute function code on 669 tape drives.
+**  Purpose:        Pack a conversion table into PP words.
+**
+**  Parameters:     Name        Description.
+**                  convTable   conversion table
+**
+**  Returns:        FcStatus
+**
+**------------------------------------------------------------------------*/
+static void mt679PackConversionTable(u8 *convTable)
+    {
+    CtrlParam *cp = activeDevice->controllerContext;
+    PpWord    *op = cp->packedConv;
+    u8        *ip = convTable;
+    u16       c1, c2, c3;
+    int       i;
+
+    for (i = 0; i < 85; i++)
+        {
+        c1 = *ip++;
+        c2 = *ip++;
+        c3 = *ip++;
+
+        *op++ = ((c1 << 4) | (c2 >> 4)) & Mask12;
+        *op++ = ((c2 << 8) | (c3 >> 0)) & Mask12;
+        }
+
+    c1 = *ip++;
+    c2 = *convTable;    // wrap
+
+    *op++ = ((c1 << 4) | (c2 >> 4)) & Mask12;
+    }
+
+/*--------------------------------------------------------------------------
+**  Purpose:        Pack a conversion table into PP words.
+**
+**  Parameters:     Name        Description.
+**                  convTable   conversion table
+**
+**  Returns:        FcStatus
+**
+**------------------------------------------------------------------------*/
+static void mt679Pack6BitTable(u8 *convTable)
+    {
+    CtrlParam *cp = activeDevice->controllerContext;
+    PpWord    *op = cp->packedConv;
+    u8        *ip = convTable;
+    int       i;
+
+    memset(cp->packedConv, 0, MaxPackedConvBuf * sizeof(PpWord));
+
+    for (i = 0; i < 128; i++)
+        {
+        *op++ = ((ip[0] << 6) | ip[1]) & Mask12;
+        ip   += 2;
+        }
+    }
+
+/*--------------------------------------------------------------------------
+**  Purpose:        Unpack PP words into a conversion table.
+**
+**  Parameters:     Name        Description.
+**                  convTable   conversion table
+**
+**  Returns:        FcStatus
+**
+**------------------------------------------------------------------------*/
+static void mt679UnpackConversionTable(u8 *convTable)
+    {
+    CtrlParam *cp = activeDevice->controllerContext;
+    PpWord    *ip = cp->packedConv;
+    u8        *op = convTable;
+    int       i;
+
+    for (i = 0; i < 85; i++)
+        {
+        *op++ = ((ip[0] >> 4) & 0xFF);
+        *op++ = ((ip[0] << 4) & 0xF0) | ((ip[1] >> 8) & 0x0F);
+        *op++ = ((ip[1] >> 0) & 0xFF);
+        ip   += 2;
+        }
+
+    *op++ = ((ip[0] >> 4) & 0xFF);    // discard last 4 bits
+
+#if DEBUG
+        {
+        int i;
+        fprintf(mt679Log, "\n(mt679  ) Conversion Table %d", cp->selectedConversion);
+
+        for (i = 0; i < 256; i++)
+            {
+            if (i % 16 == 0)
+                {
+                fprintf(mt679Log, "\n  %02X :", i);
+                }
+
+            fprintf(mt679Log, "  %02X", convTable[i]);
+            }
+        }
+    fprintf(mt679Log, "\n");
+#endif
+    }
+
+/*--------------------------------------------------------------------------
+**  Purpose:        Unpack PP words into a conversion table.
+**
+**  Parameters:     Name        Description.
+**                  convTable   conversion table
+**
+**  Returns:        FcStatus
+**
+**------------------------------------------------------------------------*/
+static void mt679Unpack6BitTable(u8 *convTable)
+    {
+    CtrlParam *cp = activeDevice->controllerContext;
+    PpWord    *ip = cp->packedConv;
+    u8        *op = convTable;
+    int       i;
+
+    for (i = 0; i < 128; i++)
+        {
+        *op++ = (*ip >> 6) & 0x3F;
+        *op++ = (*ip >> 0) & 0x3F;
+        ip   += 1;
+        }
+
+#if DEBUG
+        {
+        int i;
+        fprintf(mt679Log, "\n(mt679  ) Conversion Table %d", cp->selectedConversion);
+
+        for (i = 0; i < 256; i++)
+            {
+            if (i % 16 == 0)
+                {
+                fprintf(mt679Log, "\n%02X :", i);
+                }
+
+            fprintf(mt679Log, " %02X", convTable[i]);
+            }
+        }
+    fprintf(mt679Log, "\n");
+#endif
+    }
+
+/*--------------------------------------------------------------------------
+**  Purpose:        Execute function code on 679 tape drives.
 **
 **  Parameters:     Name        Description.
 **                  funcCode    function code
@@ -1176,7 +1190,7 @@ static void mt669SetupUnitReadyStatus(void)
 **  Returns:        FcStatus
 **
 **------------------------------------------------------------------------*/
-static FcStatus mt669Func(PpWord funcCode)
+static FcStatus mt679Func(PpWord funcCode)
     {
     u32       recLen1;
     i8        unitNo;
@@ -1195,13 +1209,13 @@ static FcStatus mt669Func(PpWord funcCode)
         }
 
 #if DEBUG
-    fprintf(mt669Log, "\n%010u PP:%02o CH:%02o u:%d f:%04o T:%-25s  >   ",
+    fprintf(mt679Log, "\n(mt679  ) %010u PP:%02o CH:%02o u:%d f:%04o T:%-25s  >   ",
             traceSequenceNo,
             activePpu->id,
             activeDevice->channel->id,
             unitNo,
             funcCode,
-            mt669Func2String(funcCode));
+            mt679Func2String(funcCode));
 #endif
 
     /*
@@ -1211,14 +1225,28 @@ static FcStatus mt669Func(PpWord funcCode)
     activeChannel->full = FALSE;
 
     /*
-    **  Controller is hard-wired to equipment number 0 requiring top three bits to be zero.
+    **  Controller has a hard-wired equipment number which must match the top
+    **  three bits of the function code.
     */
-    if (((funcCode >> 9) & Mask3) != 0)
+    if (((funcCode >> 9) & Mask3) != activeDevice->eqNo)
         {
         /*
         **  Not for us.
         */
         return (FcDeclined);
+        }
+
+    /*
+    **  Strip of the equipment number.
+    */
+    funcCode &= Mask9;
+
+    /*
+    **  Flush write data if necessary.
+    */
+    if (cp->writing)
+        {
+        mt679FlushWrite();
         }
 
     /*
@@ -1228,7 +1256,7 @@ static FcStatus mt669Func(PpWord funcCode)
         {
     default:
 #if DEBUG
-        fprintf(mt669Log, " FUNC not implemented & declined!");
+        fprintf(mt679Log, " FUNC not implemented & declined!");
 #endif
         if (unitNo != -1)
             {
@@ -1238,61 +1266,47 @@ static FcStatus mt669Func(PpWord funcCode)
 
         return (FcDeclined);
 
-    /*
-    **  Setup functions.
-    */
-    case Fc669FormatUnit:
-        activeDevice->fcode        = funcCode;
-        activeDevice->recordLength = 2;
-        mt669ResetStatus(tp);
-        break;
-
-    case Fc669LoadConversion1:
-    case Fc669LoadConversion2:
-    case Fc669LoadConversion3:
-        activeDevice->fcode        = funcCode;
-        activeDevice->recordLength = 0;
-        break;
-
-    /*
-    **  Unit reserve functions.
-    */
-    case Fc669Connect + 0:
-    case Fc669Connect + 1:
-    case Fc669Connect + 2:
-    case Fc669Connect + 3:
-    case Fc669Connect + 4:
-    case Fc669Connect + 5:
-    case Fc669Connect + 6:
-    case Fc669Connect + 7:
-        unitNo = funcCode & Mask3;
-        tp     = (TapeParam *)activeDevice->context[unitNo];
-        if (tp == NULL)
+    case Fc679ClearUnit:
+        if (unitNo != -1)
             {
-            activeDevice->selectedUnit = -1;
-            logError(LogErrorLocation, "(mt669  ) channel %02o - invalid select: %04o", activeChannel->id, (u32)funcCode);
-
-            return (FcDeclined);
+            activeDevice->recordLength = 0;
+            tp->recordLength           = 0;
+            tp->errorCode = 0;
+            mt679ResetStatus(tp);
             }
-
-        activeDevice->selectedUnit = unitNo;
 
         return (FcProcessed);
 
-    case Fc669Release:
-    case Fc669ClearReserve:
-    case Fc669ClearOppositeReserve:
+    case Fc679Release:
         activeDevice->selectedUnit = -1;
 
         return (FcProcessed);
 
-    /*
-    **  Unit manipulation functions.
-    */
-    case Fc669Rewind:
+    case Fc679FormatUnit:
+        activeDevice->fcode        = funcCode;
+        activeDevice->recordLength = 3;
+        mt679ResetStatus(tp);
+        break;
+
+    case Fc679OppositeParity:
+    case Fc679OppositeDensity:
+        mt679ResetStatus(tp);
+
+        return (FcProcessed);
+
+    case Fc679SetReadClipNorm:
+    case Fc679SetReadClipHigh:
+    case Fc679SetReadClipLow:
+    case Fc679SetReadClipHyper:
+        mt679ResetStatus(tp);
+
+        return (FcProcessed);
+
+    case Fc679Rewind:
         if ((unitNo != -1) && tp->unitReady)
             {
-            mt669ResetStatus(tp);
+            mt679ResetStatus(tp);
+            //fseek(activeDevice->fcb[unitNo], 0, SEEK_SET);
             tp->currPos = 0;
             if (tp->blockNo != 0)
                 {
@@ -1306,7 +1320,7 @@ static FcStatus mt669Func(PpWord funcCode)
 
         return (FcProcessed);
 
-    case Fc669RewindUnload:
+    case Fc679RewindUnload:
         if ((unitNo != -1) && tp->unitReady)
             {
             if (tp->ringIn)
@@ -1317,12 +1331,12 @@ static FcStatus mt669Func(PpWord funcCode)
                 */
                 if (msync(tp->baseAddr, tp->maxOffset + 1, MS_SYNC) == -1)
                     {
-                    logError(LogErrorLocation, "(mt669  ) Unit %d final synchronization failed code %d\n",
+                    logError(LogErrorLocation, "(mt679  ) Unit %d final synchronization failed code %d\n",
                         unitNo, errno);
                     }
                 if (munmap(tp->baseAddr, tp->maxOffset + 1) == -1)
                     {
-                    logError(LogErrorLocation, "(mt669  ) Unit %d final unmap failed code %d\n",
+                    logError(LogErrorLocation, "(mt679  ) Unit %d final unmap failed code %d\n",
                         unitNo, errno);
                     }
                 /*
@@ -1330,13 +1344,13 @@ static FcStatus mt669Func(PpWord funcCode)
                 */
                 if (ftruncate(fileno(activeDevice->fcb[unitNo]), (tp->currPos + 1)) == -1)
                     {
-                    logError(LogErrorLocation, "(mt669  ) Unit %d final truncate failed code %d\n",
+                    logError(LogErrorLocation, "(mt679  ) Unit %d final truncate failed code %d\n",
                         unitNo, errno);
                     }
                 else
                     {
                     fflush(activeDevice->fcb[unitNo]);
-                    logError(LogErrorLocation, "(mt669  ) Unit %d truncated to size %d\n",
+                    logError(LogErrorLocation, "(mt679  ) Unit %d truncated to size %d\n",
                         unitNo, tp->currPos + 1);
                     }
                 }
@@ -1344,7 +1358,7 @@ static FcStatus mt669Func(PpWord funcCode)
                 {
                 if (munmap(tp->baseAddr, tp->maxOffset + 1) == -1)
                     {
-                    logError(LogErrorLocation, "(mt669  ) Unit %d final unmap failed code %d\n",
+                    logError(LogErrorLocation, "(mt679  ) Unit %d final unmap failed code %d\n",
                         unitNo, errno);
                     }
                 }
@@ -1352,7 +1366,7 @@ static FcStatus mt669Func(PpWord funcCode)
             tp->currPos = 0;
             tp->baseAddr = NULL;
             tp->flushCount = 0;
-            mt669ResetStatus(tp);
+            mt679ResetStatus(tp);
             tp->blockNo   = 0;
             tp->unitReady = FALSE;
             tp->ringIn    = FALSE;
@@ -1362,27 +1376,71 @@ static FcStatus mt669Func(PpWord funcCode)
 
         return (FcProcessed);
 
-    case Fc669SearchTapeMarkF:
+    case Fc679StopMotion:
+        return (FcProcessed);
+
+    case Fc679GeneralStatus:
+        activeDevice->fcode        = funcCode;
+        activeDevice->recordLength = 16;
+        mt679SetupStatus(tp);
+        break;
+
+    case Fc679DetailedStatus:
+        activeDevice->fcode        = funcCode;
+        activeDevice->recordLength = 14;
+        mt679SetupStatus(tp);
+        break;
+
+    case Fc679UnitStatus:
+        activeDevice->fcode        = funcCode;
+        activeDevice->recordLength = 6;
+        mt679SetupStatus(tp);
+        break;
+
+    case Fc679Forespace:
         if ((unitNo != -1) && tp->unitReady)
             {
-            mt669ResetStatus(tp);
+            mt679ResetStatus(tp);
+            mt679FuncForespace();
+            }
+
+        return (FcProcessed);
+
+    case Fc679Backspace:
+        if ((unitNo != -1) && tp->unitReady)
+            {
+            mt679ResetStatus(tp);
+            mt679FuncBackspace();
+            }
+
+        return (FcProcessed);
+
+    case Fc679CtrledBackspace:
+        logDtError(LogErrorLocation, "channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
+
+        return (FcProcessed);
+
+    case Fc679SearchTapeMarkF:
+        if ((unitNo != -1) && tp->unitReady)
+            {
+            mt679ResetStatus(tp);
 
             do
                 {
-                mt669FuncForespace();
+                mt679FuncForespace();
                 } while (!tp->fileMark && !tp->endOfTape && !tp->alert);
             }
 
         return (FcProcessed);
 
-    case Fc669SearchTapeMarkB:
+    case Fc679SearchTapeMarkB:
         if ((unitNo != -1) && tp->unitReady)
             {
-            mt669ResetStatus(tp);
+            mt679ResetStatus(tp);
 
             do
                 {
-                mt669FuncBackspace();
+                mt679FuncBackspace();
                 } while (!tp->fileMark && tp->blockNo != 0 && !tp->alert);
             }
 
@@ -1391,8 +1449,8 @@ static FcStatus mt669Func(PpWord funcCode)
             /*
             **  A "catastrophic" error has occured - we reached load point.
             **  (see manual pages 2-7 and A-2)
-            **  <<<<<<<<<<<<<<<<<<< this probably should move into mt669FuncBackspace >>>>>>>>>>>>>>>>>>
-            **  <<<<<<<<<<<<<<<<<<< we also need to do this in mt669FuncForespace     >>>>>>>>>>>>>>>>>>
+            **  <<<<<<<<<<<<<<<<<<< this probably should move into mt679FuncBackspace >>>>>>>>>>>>>>>>>>
+            **  <<<<<<<<<<<<<<<<<<< we also need to do this in mt679FuncForespace     >>>>>>>>>>>>>>>>>>
             */
             tp->alert     = TRUE;
             tp->errorCode = EcBackPastLoadpoint;
@@ -1402,262 +1460,257 @@ static FcStatus mt669Func(PpWord funcCode)
 
         return (FcProcessed);
 
-    case Fc669CtrlForespaceFindGap:
-    case Fc669CtrlBackspaceFindGap:
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
+    case Fc679Connect + 0:
+    case Fc679Connect + 1:
+    case Fc679Connect + 2:
+    case Fc679Connect + 3:
+    case Fc679Connect + 4:
+    case Fc679Connect + 5:
+    case Fc679Connect + 6:
+    case Fc679Connect + 7:
+    case Fc679Connect + 010:
+    case Fc679Connect + 011:
+    case Fc679Connect + 012:
+    case Fc679Connect + 013:
+    case Fc679Connect + 014:
+    case Fc679Connect + 015:
+    case Fc679Connect + 016:
+    case Fc679Connect + 017:
+        unitNo = funcCode & Mask4;
+        tp     = (TapeParam *)activeDevice->context[unitNo];
+        if (tp == NULL)
+            {
+            activeDevice->selectedUnit = -1;
+            logDtError(LogErrorLocation, "channel %02o - invalid select: %04o", activeChannel->id, (u32)funcCode);
+
+            return (FcDeclined);
+            }
+
+        mt679ResetStatus(tp);
+        activeDevice->selectedUnit = unitNo;
 
         return (FcProcessed);
 
-    case Fc669Forespace:
+    case Fc679WarmstartHighDens + 0:
+    case Fc679WarmstartHighDens + 1:
+    case Fc679WarmstartHighDens + 2:
+    case Fc679WarmstartHighDens + 3:
+    case Fc679WarmstartHighDens + 4:
+    case Fc679WarmstartHighDens + 5:
+    case Fc679WarmstartHighDens + 6:
+    case Fc679WarmstartHighDens + 7:
+    case Fc679WarmstartHighDens + 010:
+    case Fc679WarmstartHighDens + 011:
+    case Fc679WarmstartHighDens + 012:
+    case Fc679WarmstartHighDens + 013:
+    case Fc679WarmstartHighDens + 014:
+    case Fc679WarmstartHighDens + 015:
+    case Fc679WarmstartHighDens + 016:
+    case Fc679WarmstartHighDens + 017:
+    case Fc679WarmstartLowDens + 0:
+    case Fc679WarmstartLowDens + 1:
+    case Fc679WarmstartLowDens + 2:
+    case Fc679WarmstartLowDens + 3:
+    case Fc679WarmstartLowDens + 4:
+    case Fc679WarmstartLowDens + 5:
+    case Fc679WarmstartLowDens + 6:
+    case Fc679WarmstartLowDens + 7:
+    case Fc679WarmstartLowDens + 010:
+    case Fc679WarmstartLowDens + 011:
+    case Fc679WarmstartLowDens + 012:
+    case Fc679WarmstartLowDens + 013:
+    case Fc679WarmstartLowDens + 014:
+    case Fc679WarmstartLowDens + 015:
+    case Fc679WarmstartLowDens + 016:
+    case Fc679WarmstartLowDens + 017:
+        unitNo = funcCode & 017;
+        tp     = (TapeParam *)activeDevice->context[unitNo];
+        if ((tp == NULL) || !tp->unitReady)
+            {
+            activeDevice->selectedUnit = -1;
+            logDtError(LogErrorLocation, "channel %02o - invalid select: %04o", activeChannel->id, (u32)funcCode);
+
+            return (FcDeclined);
+            }
+
+        mt679ResetStatus(tp);
+        activeDevice->selectedUnit = unitNo;
+        //fseek(activeDevice->fcb[unitNo], 0, SEEK_SET);
+        tp->currPos = 0;
+        cp->selectedConversion = 0;
+        cp->packedMode         = TRUE;
+        tp->blockNo            = 0;
+        activeDevice->fcode    = Fc679ReadFwd;
+        mt679ResetStatus(tp);
+        mt679FuncRead();
+        break;
+
+    case Fc679ReadFwd:
         if ((unitNo != -1) && tp->unitReady)
             {
-            mt669ResetStatus(tp);
-            mt669FuncForespace();
+            activeDevice->fcode = funcCode;
+            mt679ResetStatus(tp);
+            mt679FuncRead();
+            break;
             }
 
         return (FcProcessed);
 
-    case Fc669Backspace:
+    case Fc679ReadBkw:
         if ((unitNo != -1) && tp->unitReady)
             {
-            mt669ResetStatus(tp);
-            mt669FuncBackspace();
+            activeDevice->fcode = funcCode;
+            mt679ResetStatus(tp);
+            mt679FuncReadBkw();
+            break;
             }
 
         return (FcProcessed);
 
-    case Fc669WriteTapeMark:
+    case Fc679CopyReadConv:
+        if ((unitNo == -1) && (cp->selectedConversion >= 1) && (cp->selectedConversion <= 4))
+            {
+            activeDevice->fcode        = funcCode;
+            activeDevice->recordLength = 0;
+            if (!cp->packedMode)
+                {
+                mt679Pack6BitTable(cp->readConv[cp->selectedConversion - 1]);
+                }
+            else
+                {
+                mt679PackConversionTable(cp->readConv[cp->selectedConversion - 1]);
+                }
+            break;
+            }
+
+        return (FcProcessed);
+
+    case Fc679CopyWriteConv:
+        if ((unitNo == -1) && (cp->selectedConversion >= 1) && (cp->selectedConversion <= 4))
+            {
+            activeDevice->fcode        = funcCode;
+            activeDevice->recordLength = 0;
+            if (!cp->packedMode)
+                {
+                mt679Pack6BitTable(cp->writeConv[cp->selectedConversion - 1]);
+                }
+            else
+                {
+                mt679PackConversionTable(cp->writeConv[cp->selectedConversion - 1]);
+                }
+            break;
+            }
+
+        return (FcProcessed);
+
+    case Fc679Write:
+    case Fc679WriteShort:
+        if (cp->lwrMode || ((unitNo != -1) && tp->unitReady && tp->ringIn))
+            {
+            activeDevice->fcode = funcCode;
+            mt679ResetStatus(tp);
+            tp->bp = tp->ioBuffer;
+            activeDevice->recordLength = 0;
+            cp->writing       = TRUE;
+            cp->oddFrameCount = funcCode == Fc679WriteShort;
+            if (!cp->lwrMode)
+                {
+                tp->blockNo += 1;
+                }
+            break;
+            }
+
+        return (FcProcessed);
+
+    case Fc679WriteTapeMark:
         if ((unitNo != -1) && tp->unitReady && tp->ringIn)
             {
-            mt669ResetStatus(tp);
+            mt679ResetStatus(tp);
             tp->bp       = tp->ioBuffer;
+            //position     = ftell(activeDevice->fcb[unitNo]);
             position     = tp->currPos;
             tp->blockNo += 1;
+
+            /*
+            **  The following fseek makes fwrite behave as desired after an fread.
+            */
+            //fseek(activeDevice->fcb[unitNo], 0, SEEK_CUR);
 
             /*
             **  Write a TAP tape mark.
             */
             recLen1 = 0;
+            //fwrite(&recLen1, sizeof(recLen1), 1, activeDevice->fcb[unitNo]);
             memcpy(&tp->baseAddr[tp->currPos], &recLen1, sizeof(recLen1));
             tp->currPos += sizeof(recLen1);
             tp->fileMark = TRUE;
+
+            /*
+            **  The following fseek prepares for any subsequent fread.
+            */
+            //fseek(activeDevice->fcb[unitNo], 0, SEEK_CUR);
             }
 
         return (FcProcessed);
 
-    case Fc669EraseToEOT:
+    case Fc679Erase:
+        return (FcProcessed);
+
+    case Fc679EraseDataSecurity:
         if ((unitNo != -1) && tp->unitReady && tp->ringIn)
             {
             // ? would be nice to truncate somehow
-            logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
+            logDtError(LogErrorLocation, "channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
             }
 
         return (FcProcessed);
 
-    case Fc669CtrledForespace:
-    case Fc669CtrledBackspace:
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
-
-        return (FcProcessed);
-
-    case Fc669StopMotion:
-        mt669ResetStatus(tp);
-
-        return (FcProcessed);
-
-    /*
-    **  Read functions.
-    */
-    case Fc669ReadFwd:
-        if ((unitNo != -1) && tp->unitReady)
+    case Fc679LoadReadConv:
+    case Fc679LoadWriteConv:
+        if (unitNo == -1)
             {
-            activeDevice->fcode = funcCode;
-            mt669ResetStatus(tp);
-            mt669FuncRead();
-            break;
-            }
-
-        return (FcProcessed);
-
-    case Fc669ReadBkw:
-        if ((unitNo != -1) && tp->unitReady)
-            {
-            activeDevice->fcode = funcCode;
-            mt669ResetStatus(tp);
-            mt669FuncReadBkw();
-            break;
-            }
-
-        return (FcProcessed);
-
-    /*
-    **  Write functions.
-    */
-    case Fc669WriteOdd12:
-        funcCode = Fc669WriteOdd;
-
-    /* fall through */
-    case Fc669Write:
-    case Fc669WriteOdd:
-        if ((unitNo != -1) && tp->unitReady && tp->ringIn)
-            {
-            activeDevice->fcode = funcCode;
-            mt669ResetStatus(tp);
-            tp->bp = tp->ioBuffer;
+            activeDevice->fcode        = funcCode;
             activeDevice->recordLength = 0;
-            cp->writing  = TRUE;
-            tp->blockNo += 1;
             break;
             }
 
         return (FcProcessed);
 
-    /*
-    **  Status functions.
-    */
-    case Fc669GeneralStatus:
-        activeDevice->fcode        = funcCode;
-        activeDevice->recordLength = 2;
-        mt669SetupGeneralStatus(tp);
-        break;
-
-    case Fc669DetailedStatus:
-        activeDevice->fcode        = funcCode;
-        activeDevice->recordLength = 8;
-        mt669SetupDetailedStatus(tp);
-        break;
-
-    case Fc669CumulativeStatus:
-        activeDevice->fcode        = funcCode;
-        activeDevice->recordLength = 8;
-        mt669SetupCumulativeStatus(tp);
-        break;
-
-    case Fc669UnitReadyStatus:
-        activeDevice->fcode        = funcCode;
-        activeDevice->recordLength = 2;
-        mt669SetupUnitReadyStatus();
-        break;
-
-    /*
-    **  Non-motion read recovery functions.
-    */
-    case Fc669SetReadClipNorm:
-    case Fc669SetReadClipHigh:
-    case Fc669SetReadClipLow:
-    case Fc669SetReadClipHyper:
-    case Fc669ReadSprktDlyNorm:
-    case Fc669ReadSprktDlyIncr:
-    case Fc669ReadSprktDlyDecr:
-    case Fc669OppParity:
-    case Fc669OppDensity:
-        mt669ResetStatus(tp);
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
+    case Fc679RewindOnEOT:
+    case Fc679WaitForStop:
+    case Fc679TestVelocityVect:
+    case Fc679MeasureGapSizeFwd:
+    case Fc679MeasureGapSizeBkw:
+    case Fc679MeasureStartTFwd:
+    case Fc679SetTransferCheckCh:
+    case Fc679SetLoopWTRTcu:
+#if DEBUG
+        fprintf(mt679Log, "(mt679  ) maintenance functions not implemented %o\n", funcCode);
+#endif
 
         return (FcProcessed);
 
-    /*
-    **  Read error recovery functions.
-    */
-    case Fc669LongForespace:
-    case Fc669LongBackspace:
-    case Fc669RereadFwd:
-    case Fc669RereadBkw:
-    case Fc669ReadBkwOddLenParity:
-    case Fc669RereadBkwOddLenParity:
-    case Fc669RepeatRead:
-        mt669ResetStatus(tp);
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
-
-        return (FcProcessed);
-
-    /*
-    **  Write error recovery functions.
-    */
-    case Fc669Erase:
-    case Fc669WriteRepos:
-    case Fc669WriteEraseRepos:
-    case Fc669WriteReposiCtrl:
-    case Fc669WriteEraseReposCtrl:
-    case Fc669EraseRepos:
-    case Fc669EraseEraseRepos:
-        mt669ResetStatus(tp);
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
-
-        return (FcProcessed);
-
-    /*
-    **  Diagnostic functions.
-    */
-    case Fc669LoadReadRam:
-    case Fc669LoadWriteRam:
-    case Fc669LoadReadWriteRam:
-    case Fc669CopyReadRam:
-    case Fc669CopyWriteRam:
-        mt669ResetStatus(tp);
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
-
-        return (FcProcessed);
-
-    case Fc669FormatTcuUnitStatus:
-        activeDevice->fcode        = funcCode;
-        activeDevice->recordLength = 1;
-        break;
-
-    case Fc669CopyTcuStatus:
-    case Fc669SendTcuCmd:
-    case Fc669SetQuartReadSprktDly:
-        mt669ResetStatus(tp);
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function: %04o", activeChannel->id, (u32)funcCode);
-
-        return (FcProcessed);
-
-    /*
-    **  Undocumented functions.
-    */
-    case Fc669ConnectRewindRead + 0:
-    case Fc669ConnectRewindRead + 1:
-    case Fc669ConnectRewindRead + 2:
-    case Fc669ConnectRewindRead + 3:
-    case Fc669ConnectRewindRead + 4:
-    case Fc669ConnectRewindRead + 5:
-    case Fc669ConnectRewindRead + 6:
-    case Fc669ConnectRewindRead + 7:
-        unitNo = funcCode & Mask3;
-        tp     = (TapeParam *)activeDevice->context[unitNo];
-        if ((tp == NULL) || !tp->unitReady)
+    case Fc679SetLoopWTR1TU:
+    case Fc679SetLoopWTR2TU:
+        if ((unitNo != -1) && tp->unitReady)
             {
-            activeDevice->selectedUnit = -1;
-            logDtError(LogErrorLocation, "Channel %02o - invalid select: %04o", activeChannel->id, (u32)funcCode);
-
-            return (FcDeclined);
+            cp->lwrMode = TRUE;
             }
 
-        mt669ResetStatus(tp);
-        activeDevice->selectedUnit = unitNo;
-        tp->currPos = 0;
-        tp->selectedConversion = 0;
-        tp->packedMode         = TRUE;
-        tp->blockNo            = 0;
-        activeDevice->fcode    = Fc669ReadFwd;
-        mt669ResetStatus(tp);
-        mt669FuncRead();
-        break;
+        return (FcProcessed);
 
-    case Fc669MasterClear:
-        activeDevice->fcode        = funcCode;
+    case Fc679SetEvenWrParity:
+    case Fc679SetEvenChParity:
+    case Fc679ForceDataErrors:
+#if DEBUG
+        fprintf(mt679Log, "(mt679  ) maintenance functions not implemented %o\n", funcCode);
+#endif
+
+        return (FcProcessed);
+
+    case Fc679MasterClear:
         activeDevice->selectedUnit = -1;
-        mt669ResetStatus(NULL);
-        break;
-
-    case Fc669ClearUnit:
-        if (unitNo != -1)
-            {
-            activeDevice->recordLength = 0;
-            tp->recordLength           = 0;
-            tp->errorCode = 0;
-            mt669ResetStatus(tp);
-            }
+        mt679ResetStatus(NULL);
 
         return (FcProcessed);
         }
@@ -1666,14 +1719,14 @@ static FcStatus mt669Func(PpWord funcCode)
     }
 
 /*--------------------------------------------------------------------------
-**  Purpose:        Perform I/O on MT669.
+**  Purpose:        Perform I/O on MT679.
 **
 **  Parameters:     Name        Description.
 **
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669Io(void)
+static void mt679Io(void)
     {
     CtrlParam *cp = activeDevice->controllerContext;
     i8        unitNo;
@@ -1692,7 +1745,7 @@ static void mt669Io(void)
         return;
         }
 
-    activeChannel->delayStatus = 5;
+    activeChannel->delayStatus = 3;
 
     /*
     **  Setup selected unit context.
@@ -1713,25 +1766,23 @@ static void mt669Io(void)
     switch (activeDevice->fcode)
         {
     default:
-        logDtError(LogErrorLocation, "Channel %02o - unsupported function code: %04o",
+        logDtError(LogErrorLocation, "channel %02o - unsupported function code: %04o",
                    activeChannel->id, activeDevice->fcode);
         break;
 
-    case Fc669ClearUnit:
-        /*
-        **  Previous function has terminated.
-        */
+    case Fc679ClearUnit:
+        //  This performs no function but needs to be accounted-for.
         break;
 
-    case Fc669FormatUnit:
+    case Fc679FormatUnit:
         if (activeDevice->recordLength > 0)
             {
             if (activeChannel->full)
                 {
-                wordNumber = 3 - activeDevice->recordLength;
+                wordNumber = 4 - activeDevice->recordLength;
 
 #if DEBUG
-                fprintf(mt669Log, " %04o", activeChannel->data);
+                fprintf(mt679Log, " %04o", activeChannel->data);
 #endif
 
                 if (wordNumber == 1)
@@ -1741,26 +1792,25 @@ static void mt669Io(void)
                     */
                     param = activeChannel->data;
 
+                    if (((param >> 11) & 1) != 0)
+                        {
+                        cp->selectedConversion = (param >> 8) & Mask3;
+                        if (cp->selectedConversion > 4)
+                            {
+                            cp->selectedConversion = 0;
+                            }
+                        }
+
+                    if (((param >> 7) & 1) != 0)
+                        {
+                        cp->packedMode = ((param >> 5) & Mask2) == 1;
+                        }
+
                     if (((param >> 4) & 1) != 0)
                         {
                         unitNo = param & Mask4;
                         activeDevice->selectedUnit = unitNo;
                         tp = (TapeParam *)activeDevice->context[unitNo];
-                        }
-
-                    if ((tp != NULL) && (((param >> 11) & 1) != 0))
-                        {
-                        tp->selectedConversion = (param >> 8) & Mask3;
-                        if (tp->selectedConversion > 3)
-                            {
-                            tp->selectedConversion = 0;
-                            }
-                        }
-
-                    if ((tp != NULL) && (((param >> 7) & 1) != 0))
-                        {
-                        tp->assemblyMode = (param >> 5) & Mask2;
-                        tp->packedMode   = tp->assemblyMode == 1;
                         }
                     }
 
@@ -1771,16 +1821,19 @@ static void mt669Io(void)
                     */
                     param = activeChannel->data;
 
-                    if ((tp != NULL) && (((param >> 8) & 1) != 0))
+                    if (((param >> 8) & 1) != 0)
                         {
-                        tp->density = (param >> 6) & Mask2;
+                        cp->density = (param >> 6) & Mask2;
                         }
 
-                    if ((tp != NULL) && (((param >> 5) & 1) != 0))
+                    if (((param >> 5) & 1) != 0)
                         {
-                        tp->minBlockLength = param & Mask5;
+                        cp->minBlockLength = param & Mask5;
                         }
+                    }
 
+                if (wordNumber == 3)
+                    {
                     /*
                     **  Last parameter word deactivates function.
                     */
@@ -1792,51 +1845,44 @@ static void mt669Io(void)
 
             activeChannel->full = FALSE;
             }
-
         break;
 
-    case Fc669LoadConversion1:
-        if (activeChannel->full)
+
+    case Fc679GeneralStatus:
+    case Fc679DetailedStatus:
+    case Fc679UnitStatus:
+        if (!activeChannel->full)
             {
-            activeChannel->full = FALSE;
-            cp->readConv[0][activeDevice->recordLength] = activeChannel->data & 077;
-            if (activeChannel->data & 01000)
+            if (activeDevice->recordLength > 0)
                 {
-                cp->writeConv[0][activeChannel->data & 077] = (u8)activeDevice->recordLength;
+                wordNumber = 17 - activeDevice->recordLength;
+                if (tp == NULL)
+                    {
+                    activeChannel->data = cp->controllerStatus[wordNumber];
+                    }
+                else
+                    {
+                    activeChannel->data = tp->deviceStatus[wordNumber];
+                    }
+                activeDevice->recordLength -= 1;
+                if (wordNumber == 16)
+                    {
+                    /*
+                    **  Last status word deactivates function.
+                    */
+                    activeDevice->fcode           = 0;
+                    activeChannel->discAfterInput = TRUE;
+                    }
+
+                activeChannel->full = TRUE;
+#if DEBUG
+                fprintf(mt679Log, " %04o", activeChannel->data);
+#endif
                 }
-
-            activeDevice->recordLength += 1;
             }
-
         break;
 
-    case Fc669LoadConversion2:
-        if (activeChannel->full)
-            {
-            activeChannel->full = FALSE;
-            cp->readConv[1][activeDevice->recordLength] = activeChannel->data & 077;
-            if (activeChannel->data & 01000)
-                {
-                cp->writeConv[1][activeChannel->data & 077] = (u8)activeDevice->recordLength;
-                }
-
-            activeDevice->recordLength += 1;
-            }
-
-        break;
-
-    case Fc669LoadConversion3:
-        if (activeChannel->full)
-            {
-            activeChannel->full = FALSE;
-            cp->readConv[2][activeDevice->recordLength] = activeChannel->data & 077;
-            cp->writeConv[2][activeChannel->data & 077] = (u8)activeDevice->recordLength;
-            activeDevice->recordLength += 1;
-            }
-
-        break;
-
-    case Fc669ReadFwd:
+    case Fc679ReadFwd:
         if (activeChannel->full)
             {
             break;
@@ -1844,7 +1890,8 @@ static void mt669Io(void)
 
         if (tp->recordLength == 0)
             {
-            activeChannel->active = FALSE;
+            activeChannel->active          = FALSE;
+            activeChannel->delayDisconnect = 0;
             }
 
         if (tp->recordLength > 0)
@@ -1855,16 +1902,14 @@ static void mt669Io(void)
             if (tp->recordLength == 0)
                 {
                 /*
-                **  Last word deactivates function.
+                **  It appears that NOS/BE relies on the disconnect to happen delayed.
                 */
-                activeDevice->fcode           = 0;
-                activeChannel->discAfterInput = TRUE;
+                activeChannel->delayDisconnect = 10;
                 }
             }
-
         break;
 
-    case Fc669ReadBkw:
+    case Fc679ReadBkw:
         if (activeChannel->full)
             {
             break;
@@ -1882,142 +1927,69 @@ static void mt669Io(void)
             tp->recordLength   -= 1;
             if (tp->recordLength == 0)
                 {
-                /*
-                **  Last word deactivates function.
-                */
-                activeDevice->fcode           = 0;
                 activeChannel->discAfterInput = TRUE;
                 }
             }
-
         break;
 
-    case Fc669Write:
-    case Fc669WriteOdd:
+    case Fc679CopyReadConv:
+    case Fc679CopyWriteConv:
+        if (activeChannel->full)
+            {
+            break;
+            }
+
+        if (activeDevice->recordLength < MaxPackedConvBuf)
+            {
+#if DEBUG
+            if (activeDevice->recordLength % 8 == 0)
+                {
+                fprintf(mt679Log, "\n");
+                }
+#endif
+            activeChannel->data = cp->packedConv[activeDevice->recordLength++];
+#if DEBUG
+            fprintf(mt679Log, " %04o", activeChannel->data);
+#endif
+            }
+        else
+            {
+            activeChannel->data = 0;
+            }
+
+        activeChannel->full = TRUE;
+        break;
+
+    case Fc679Write:
+    case Fc679WriteShort:
         if (activeChannel->full && (activeDevice->recordLength < MaxPpBuf))
             {
             activeChannel->full         = FALSE;
             activeDevice->recordLength += 1;
             *tp->bp++ = activeChannel->data;
             }
-
         break;
 
-    case Fc669GeneralStatus:
+    case Fc679LoadReadConv:
+    case Fc679LoadWriteConv:
         if (!activeChannel->full)
             {
-            if (activeDevice->recordLength > 0)
-                {
-                wordNumber                  = 3 - activeDevice->recordLength;
-                activeChannel->data         = cp->deviceStatus[wordNumber];
-                activeChannel->full         = TRUE;
-                activeDevice->recordLength -= 1;
-#if DEBUG
-                fprintf(mt669Log, " %04o", activeChannel->data);
-#endif
-                if (activeDevice->recordLength == 0)
-                    {
-                    /*
-                    **  Last word deactivates function. In case this was triggered by EJM or FJM
-                    **  and the status is not picked up by an IAN we disconnect after too many cycles.
-                    */
-                    activeDevice->fcode            = 0;
-                    activeChannel->discAfterInput  = TRUE;
-                    activeChannel->delayDisconnect = 50;
-                    }
-                else
-                    {
-                    /*
-                    **  Force a disconnect if the PP didn't read the status for too many cycles.
-                    **  This is needed for SMM/KRONOS which expect only one status word.
-                    */
-                    activeChannel->delayDisconnect = 50;
-                    }
-                }
+            break;
             }
 
-        break;
+        activeChannel->full = FALSE;
 
-    case Fc669UnitReadyStatus:
-        if (!activeChannel->full)
+        if (activeDevice->recordLength < MaxPackedConvBuf)
             {
-            if (activeDevice->recordLength > 0)
-                {
-                wordNumber                  = 3 - activeDevice->recordLength;
-                activeChannel->data         = cp->deviceStatus[wordNumber];
-                activeChannel->full         = TRUE;
-                activeDevice->recordLength -= 1;
 #if DEBUG
-                fprintf(mt669Log, " %04o", activeChannel->data);
-#endif
-                if (activeDevice->recordLength == 0)
-                    {
-                    /*
-                    **  Last word deactivates function.
-                    */
-                    activeDevice->fcode           = 0;
-                    activeChannel->discAfterInput = TRUE;
-                    }
-                }
-            }
-
-        break;
-
-    case Fc669DetailedStatus:
-    case Fc669CumulativeStatus:
-        if (!activeChannel->full)
-            {
-            if (activeDevice->recordLength > 0)
+            fprintf(mt679Log, " %04o", activeChannel->data);
+            if (activeDevice->recordLength % 8 == 0)
                 {
-                wordNumber                  = 9 - activeDevice->recordLength;
-                activeChannel->data         = cp->deviceStatus[wordNumber];
-                activeDevice->recordLength -= 1;
-                if (wordNumber == 8)
-                    {
-                    /*
-                    **  Last word deactivates function.
-                    */
-                    activeDevice->fcode           = 0;
-                    activeChannel->discAfterInput = TRUE;
-                    }
-
-                activeChannel->full = TRUE;
-#if DEBUG
-                fprintf(mt669Log, " %04o", activeChannel->data);
-#endif
+                fprintf(mt679Log, "\n");
                 }
-            }
-
-        break;
-
-    case Fc669FormatTcuUnitStatus:
-        if (activeDevice->recordLength > 0)
-            {
-            if (activeChannel->full)
-                {
-#if DEBUG
-                fprintf(mt669Log, " %04o", activeChannel->data);
 #endif
-
-                /*
-                **  Ignore the possibility of the alternate meaning when bit 8
-                **  is clear as it is never used.
-                */
-                cp->excludedUnits           = (~activeChannel->data) & Mask8;
-                activeDevice->recordLength -= 1;
-                }
-
-            activeChannel->full = FALSE;
+            cp->packedConv[activeDevice->recordLength++] = activeChannel->data;   // <<<<<<<<<<<<<<< add wrapping.
             }
-
-        break;
-
-    case Fc669MasterClear:
-        if (activeChannel->full)
-            {
-            activeChannel->full = FALSE;
-            }
-
         break;
         }
     }
@@ -2030,8 +2002,15 @@ static void mt669Io(void)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669Activate(void)
+static void mt679Activate(void)
     {
+#if DEBUG
+    CtrlParam *cp = activeDevice->controllerContext;
+    fprintf(mt679Log, "\n(mt679  ) %06d PP:%02o CH:%02o Activate",
+            traceSequenceNo,
+            activePpu->id,
+            activeDevice->channel->id);
+#endif
     activeChannel->delayStatus = 5;
     }
 
@@ -2043,7 +2022,74 @@ static void mt669Activate(void)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669Disconnect(void)
+static void mt679Disconnect(void)
+    {
+    CtrlParam *cp = activeDevice->controllerContext;
+
+#if DEBUG
+    fprintf(mt679Log, "\n(mt679  ) %06d PP:%02o CH:%02o Disconnect",
+            traceSequenceNo,
+            activePpu->id,
+            activeDevice->channel->id);
+#endif
+
+    /*
+    **  Abort pending device disconnects - the PP is doing the disconnect.
+    */
+    activeChannel->delayDisconnect = 0;
+    activeChannel->discAfterInput  = FALSE;
+
+    /*
+    **  Flush conversion tables.
+    */
+    switch (activeDevice->fcode)
+        {
+    case Fc679LoadReadConv:
+        if (!cp->packedMode)
+            {
+            if ((cp->selectedConversion >= 1) && (cp->selectedConversion <= 4))
+                {
+                mt679Unpack6BitTable(cp->readConv[cp->selectedConversion - 1]);
+                }
+            }
+        else
+            {
+            if ((cp->selectedConversion >= 1) && (cp->selectedConversion <= 4))
+                {
+                mt679UnpackConversionTable(cp->readConv[cp->selectedConversion - 1]);
+                }
+            }
+
+        break;
+
+    case Fc679LoadWriteConv:
+        if (!cp->packedMode)
+            {
+            if ((cp->selectedConversion >= 1) && (cp->selectedConversion <= 4))
+                {
+                mt679Unpack6BitTable(cp->writeConv[cp->selectedConversion - 1]);
+                }
+            }
+        else
+            {
+            if ((cp->selectedConversion >= 1) && (cp->selectedConversion <= 4))
+                {
+                mt679UnpackConversionTable(cp->writeConv[cp->selectedConversion - 1]);
+                }
+            }
+        break;
+        }
+    }
+
+/*--------------------------------------------------------------------------
+**  Purpose:        Flush accumulated write data.
+**
+**  Parameters:     Name        Description.
+**
+**  Returns:        Nothing.
+**
+**------------------------------------------------------------------------*/
+static void mt679FlushWrite(void)
     {
     CtrlParam *cp = activeDevice->controllerContext;
     FILE      *fcb;
@@ -2056,25 +2102,7 @@ static void mt669Disconnect(void)
     PpWord    *ip;
     u8        *rp;
     u8        *writeConv;
-    bool      oddFrameCount;
 
-    /*
-    **  Abort pending device disconnects - the PP is doing the disconnect.
-    */
-    activeChannel->delayDisconnect = 0;
-    activeChannel->discAfterInput  = FALSE;
-
-    /*
-    **  Nothing more to do unless we are writing.
-    */
-    if (!cp->writing)
-        {
-        return;
-        }
-
-    /*
-    **  Flush written TAP record to disk.
-    */
     unitNo = activeDevice->selectedUnit;
     tp     = (TapeParam *)activeDevice->context[unitNo];
 
@@ -2083,15 +2111,23 @@ static void mt669Disconnect(void)
         return;
         }
 
-    fcb           = activeDevice->fcb[unitNo];
-    tp->bp        = tp->ioBuffer;
-    recLen0       = 0;
-    recLen2       = activeDevice->recordLength;
-    ip            = tp->ioBuffer;
-    rp            = rawBuffer;
-    oddFrameCount = activeDevice->fcode == Fc669WriteOdd;
+    if (cp->lwrMode)
+        {
+        cp->lwrMode       = FALSE;
+        cp->writing       = FALSE;
+        cp->oddFrameCount = FALSE;
 
-    switch (tp->selectedConversion)
+        return;
+        }
+
+    fcb     = activeDevice->fcb[unitNo];
+    tp->bp  = tp->ioBuffer;
+    recLen0 = 0;
+    recLen2 = activeDevice->recordLength;
+    ip      = tp->ioBuffer;
+    rp      = rawBuffer;
+
+    switch (cp->selectedConversion)
         {
     case 0:
         /*
@@ -2105,34 +2141,16 @@ static void mt669Disconnect(void)
             ip   += 2;
             }
 
-        /*
-        **  Now implement the Mode 1 Write table on page B-6 of the
-        **  7021-1/2 manual (60403900E).
-        */
-        recLen0 = (recLen2 / 4) * 6;
+        recLen0 = (u32)(rp - rawBuffer);
 
-        switch (recLen2 % 4)
+        if ((recLen2 & 1) != 0)
             {
-        case 1:
-            recLen0 += oddFrameCount ? 1 : 0;
-            break;
-
-        case 2:
-            recLen0 += oddFrameCount ? 3 : 2;
-            break;
-
-        case 3:
-            recLen0 += oddFrameCount ? 5 : 4;
-            break;
-
-        case 0:
-            if ((recLen0 > 0) && oddFrameCount)
-                {
-                recLen0 -= 1;
-                }
-            break;
+            recLen0 -= 2;
             }
-
+        else if (cp->oddFrameCount)
+            {
+            recLen0 -= 1;
+            }
         break;
 
     case 1:
@@ -2142,7 +2160,7 @@ static void mt669Disconnect(void)
         /*
         **  Convert the channel data to appropriate character set.
         */
-        writeConv = cp->writeConv[tp->selectedConversion - 1];
+        writeConv = cp->writeConv[cp->selectedConversion - 1];
 
         for (i = 0; i < recLen2; i++)
             {
@@ -2152,7 +2170,7 @@ static void mt669Disconnect(void)
             }
 
         recLen0 = (u32)(rp - rawBuffer);
-        if (oddFrameCount)
+        if (cp->oddFrameCount)
             {
             recLen0 -= 1;
             }
@@ -2172,12 +2190,20 @@ static void mt669Disconnect(void)
         }
 
     /*
+    **  The following fseek makes fwrite behave as desired after an fread.
+    */
+    //fseek(fcb, 0, SEEK_CUR);
+
+    /*
     **  Write the TAP record.
     */
+    //fwrite(&recLen1, sizeof(recLen1), 1, fcb);
     memcpy(&tp->baseAddr[tp->currPos], &recLen1, sizeof(recLen1));
     tp->currPos += sizeof(recLen1);
+    //fwrite(&rawBuffer, 1, recLen0, fcb);
     memcpy(&tp->baseAddr[tp->currPos], &rawBuffer, recLen0);
     tp->currPos += recLen0;
+    //fwrite(&recLen1, sizeof(recLen1), 1, fcb);
     memcpy(&tp->baseAddr[tp->currPos], &recLen1, sizeof(recLen1));
     tp->currPos += sizeof(recLen1);
     tp->flushCount++;
@@ -2185,21 +2211,22 @@ static void mt669Disconnect(void)
         {
         /*
         ** Issue periodic asynchronous msync calls to flush data
-        ** to disk so that the final close call is shorter.
+        ** to disk so that the final close call is faster.
         */
         msync(tp->baseAddr, tp->maxOffset + 1, MS_ASYNC);
-        tp->flushCount = 0;
+        tp->flushCount =  0;
         }
+
+    /*
+    **  The following fseek prepares for any subsequent fread.
+    */
+    //fseek(fcb, 0, SEEK_CUR);
 
     /*
     **  Writing completed.
     */
-    cp->writing = FALSE;
-
-    /*
-    **  Indicate successful write in detailed status.
-    */
-    tp->frameCount = 0;
+    cp->writing       = FALSE;
+    cp->oddFrameCount = FALSE;
     }
 
 /*--------------------------------------------------------------------------
@@ -2211,7 +2238,7 @@ static void mt669Disconnect(void)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669PackAndConvert(u32 recLen)
+static void mt679PackAndConvert(u32 recLen)
     {
     i8        unitNo = activeDevice->selectedUnit;
     TapeParam *tp    = activeDevice->context[unitNo];
@@ -2223,34 +2250,23 @@ static void mt669PackAndConvert(u32 recLen)
     u8        *readConv;
 
     /*
-    **  Determine odd count setting.
-    */
-    tp->oddCount = (recLen & 1) != 0;
-
-    /*
     **  Convert the raw data into PP words suitable for a channel.
     */
     op = tp->ioBuffer;
     rp = rawBuffer;
 
-    switch (tp->selectedConversion)
+    /*
+    **  Fill the last few bytes with zeroes.
+    */
+    rawBuffer[recLen + 0] = 0;
+    rawBuffer[recLen + 1] = 0;
+
+    switch (cp->selectedConversion)
         {
     default:
         break;
 
     case 0:
-        /*
-        **  Tape controller unit works in units of 16 bits, so we have to
-        **  round up to multiples of 16 bits. See table on page B-5 of the
-        **  7021-1/2 manual (60403900E). The fill byte is all 1's (see page
-        **  B-2).
-        */
-        if (tp->oddCount)
-            {
-            rawBuffer[recLen] = 0xFF;
-            recLen           += 1;
-            }
-
         /*
         **  Convert the raw data into PP Word data.
         */
@@ -2264,27 +2280,31 @@ static void mt669PackAndConvert(u32 recLen)
             *op++ = ((c2 << 8) | (c3 >> 0)) & Mask12;
             }
 
-        /*
-        **  Now calculate the number of PP words taking into account the
-        **  16 bit TCU words. This seems strange at first, but the table
-        **  referenced above illustrates it clearly.
-        */
-        recLen *= 8;
-        activeDevice->recordLength = (PpWord)(recLen / 12);
-        if (recLen % 12 != 0)
-            {
-            activeDevice->recordLength += 1;
-            }
+        activeDevice->recordLength = (PpWord)(op - tp->ioBuffer);
 
+        switch (recLen % 3)
+            {
+        default:
+            break;
+
+        case 1:     /* 2 words + 8 bits */
+            activeDevice->recordLength -= 1;
+            break;
+
+        case 2:
+            tp->characterFill = TRUE;
+            break;
+            }
         break;
 
     case 1:
     case 2:
     case 3:
+    case 4:
         /*
         **  Convert the Raw data to appropriate character set.
         */
-        readConv = cp->readConv[tp->selectedConversion - 1];
+        readConv = cp->readConv[cp->selectedConversion - 1];
         for (i = 0; i < recLen; i++)
             {
             c1 = readConv[*rp++];
@@ -2309,9 +2329,10 @@ static void mt669PackAndConvert(u32 recLen)
 
         activeDevice->recordLength = (PpWord)(op - tp->ioBuffer);
 
-        if (tp->oddCount)
+        if ((recLen % 2) != 0)
             {
             activeDevice->recordLength += 1;
+            tp->characterFill           = TRUE;
             }
         break;
         }
@@ -2325,7 +2346,7 @@ static void mt669PackAndConvert(u32 recLen)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669FuncRead(void)
+static void mt679FuncRead(void)
     {
     u32       len;
     u32       recLen0;
@@ -2344,11 +2365,13 @@ static void mt669FuncRead(void)
     /*
     **  Determine if the tape is at the load point.
     */
+    //position = ftell(activeDevice->fcb[unitNo]);
     position = tp->currPos;
 
     /*
     **  Read and verify TAP record length header.
     */
+    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen0)) <= tp->maxOffset)
         {
         len = 1;
@@ -2371,7 +2394,7 @@ static void mt669FuncRead(void)
 //            tp->endOfTape = TRUE;
             tp->fileMark = TRUE;
 #if DEBUG
-            fprintf(mt669Log, "TAP is at EOF (simulate tape mark)\n");
+            fprintf(mt679Log, "TAP is at EOF (simulate tape mark)\n");
 #endif
             }
 
@@ -2395,13 +2418,9 @@ static void mt669FuncRead(void)
     */
     if (recLen1 > MaxByteBuf)
         {
-        logDtError(LogErrorLocation, "Channel %02o - tape record too long: %d", activeChannel->id, recLen1);
+        logDtError(LogErrorLocation, "channel %02o - tape record too long: %d", activeChannel->id, recLen1);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
-#if DEBUG
-        fprintf(mt669Log, "(mt669  ) Tape record too long %d at position %d",
-            recLen1, tp->currPos);
-#endif
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2415,20 +2434,20 @@ static void mt669FuncRead(void)
         tp->blockNo += 1;
 
 #if DEBUG
-        fprintf(mt669Log, "(mt669  ) Tape mark");
+        fprintf(mt679Log, "Tape mark at position %d", tp->currPos);
 #endif
-
         return;
         }
 
     /*
     **  Read and verify the actual raw data.
     */
+    //len = (u32)fread(rawBuffer, 1, recLen1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + recLen1) <= tp->maxOffset)
         {
         len = recLen1;
-        memcpy(rawBuffer, &tp->baseAddr[tp->currPos], len);
-        tp->currPos += len;
+        memcpy(rawBuffer, &tp->baseAddr[tp->currPos], recLen1);
+        tp->currPos += recLen1;
         }
     else
         {
@@ -2437,13 +2456,9 @@ static void mt669FuncRead(void)
 
     if (recLen1 != (u32)len)
         {
-        logDtError(LogErrorLocation, "Channel %02o - short tape record read: %d", activeChannel->id, len);
+        logDtError(LogErrorLocation, "channel %02o - short tape record read: %d", activeChannel->id, len);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
-#if DEBUG
-        fprintf(mt669Log, "(mt669  ) Short tape record %d at position %d",
-            len, tp->currPos);
-#endif
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2451,6 +2466,7 @@ static void mt669FuncRead(void)
     /*
     **  Read and verify the TAP record length trailer.
     */
+    //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
         {
         len = 1;
@@ -2464,13 +2480,9 @@ static void mt669FuncRead(void)
 
     if (len != 1)
         {
-        logDtError(LogErrorLocation, "Channel %02o - missing tape record trailer", activeChannel->id);
+        logDtError(LogErrorLocation, "channel %02o - missing tape record trailer", activeChannel->id);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
-#if DEBUG
-        fprintf(mt669Log, "(mt669  ) Missing tape record trailer",
-            len, tp->currPos);
-#endif
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2492,17 +2504,14 @@ static void mt669FuncRead(void)
 
         if (recLen1 == ((recLen2 >> 8) & 0xFFFFFF))
             {
-            tp -> currPos += 1;
+            //fseek(activeDevice->fcb[unitNo], 1, SEEK_CUR);
+            tp->currPos += 1;
             }
         else
             {
-            logDtError(LogErrorLocation, "Channel %02o - invalid tape record trailer: %d", activeChannel->id, recLen2);
+            logDtError(LogErrorLocation, "channel %02o - invalid tape record trailer: %d", activeChannel->id, recLen2);
             tp->alert     = TRUE;
-            tp->errorCode = EcMiscUnitError;
-#if DEBUG
-            fprintf(mt669Log, "(mt669  ) Invalid tape record trailer %08X != %08X",
-                recLen1, ((recLen2 >> 8) & 0xFFFFFF));
-#endif
+            tp->errorCode = EcDiagnosticError;
 
             return;
             }
@@ -2511,16 +2520,15 @@ static void mt669FuncRead(void)
     /*
     **  Convert the raw data into PP words suitable for a channel.
     */
-    mt669PackAndConvert(recLen1);
+    mt679PackAndConvert(recLen1);
 
     /*
     **  Setup length, buffer pointer and block number.
     */
 #if DEBUG
-    fprintf(mt669Log, "(mt669  ) Read fwd %d PP words (%d 8-bit bytes)\n", activeDevice->recordLength, recLen1);
+    fprintf(mt679Log, "(mt679  ) Read fwd %d PP words (%d 8-bit bytes)\n", activeDevice->recordLength, recLen1);
 #endif
 
-    tp->frameCount   = (PpWord)recLen1;
     tp->recordLength = activeDevice->recordLength;
     tp->bp           = tp->ioBuffer;
     tp->blockNo     += 1;
@@ -2534,7 +2542,7 @@ static void mt669FuncRead(void)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669FuncReadBkw(void)
+static void mt679FuncReadBkw(void)
     {
     u32       len;
     u32       recLen0;
@@ -2553,14 +2561,12 @@ static void mt669FuncReadBkw(void)
     /*
     **  Check if we are already at the beginning of the tape.
     */
-    position = tp->currPos; 
+    //position = ftell(activeDevice->fcb[unitNo]);
+    position = tp->currPos;
     if (position == 0)
         {
         tp->suppressBot = FALSE;
         tp->blockNo     = 0;
-#if DEBUG
-        fprintf(mt669Log, "(mt669  ) At BOT");
-#endif
 
         return;
         }
@@ -2570,9 +2576,12 @@ static void mt669FuncReadBkw(void)
     **  of the record (leaving the file position ahead of the just read
     **  record trailer).
     */
-    if (tp->currPos > 4)
+    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
+    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
+    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
+    if (tp->currPos > sizeof(recLen0))
         {
-        tp->currPos -= 4;
+        tp->currPos -= sizeof(recLen0);
         }
     else
         {
@@ -2591,12 +2600,9 @@ static void mt669FuncReadBkw(void)
 
     if (len != 1)
         {
-        logDtError(LogErrorLocation, "Channel %02o - missing tape record trailer", activeChannel->id);
+        logDtError(LogErrorLocation, "channel %02o - missing tape record trailer", activeChannel->id);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
-#if DEBUG
-        fprintf(mt669Log, "(mt669  ) Missing record trailer at position %d", tp->currPos);
-#endif
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2618,12 +2624,9 @@ static void mt669FuncReadBkw(void)
     */
     if (recLen1 > MaxByteBuf)
         {
-        logDtError(LogErrorLocation, "Channel %02o - tape record too long: %d, current position %d", activeChannel->id, recLen1, tp->currPos);
+        logDtError(LogErrorLocation, "channel %02o - tape record too long: %d", activeChannel->id, recLen1);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
-#if DEBUG
-        fprintf(mt669Log, "(mt669  ) Record too long %d at position %d", recLen1, tp->currPos);
-#endif
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2631,17 +2634,21 @@ static void mt669FuncReadBkw(void)
     /*
     **  We are currently positioned ahead of the previous record trailer.
     */
+    //position -= 4;
     if (recLen1 != 0)
         {
         /*
-        **  Skip backward over the TAP record  trailer, body and header.
+        **  Skip backward over the TAP record trailer, body and header.
         */
+        //position -= 4 + recLen1;
+        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos -= (sizeof(recLen1) + recLen1 + sizeof(recLen1));
         position = tp->currPos;
 
         /*
         **  Read and verify the TAP record header.
         */
+        //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
         if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
             {
             len = 1;
@@ -2655,12 +2662,9 @@ static void mt669FuncReadBkw(void)
 
         if (len != 1)
             {
-            logDtError(LogErrorLocation, "Channel %02o - missing TAP record header", activeChannel->id);
+            logDtError(LogErrorLocation, "channel %02o - missing TAP record header", activeChannel->id);
             tp->alert     = TRUE;
-            tp->errorCode = EcMiscUnitError;
-#if DEBUG
-        fprintf(mt669Log, "(mt669  ) Missing record header at position %d", tp->currPos);
-#endif
+            tp->errorCode = EcDiagnosticError;
 
             return;
             }
@@ -2670,12 +2674,15 @@ static void mt669FuncReadBkw(void)
             /*
             **  This is more weird shit to deal with "padded" TAP records.
             */
+            //position -= 1;
+            //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
+            //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
             tp->currPos -= 1;
             if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
                 {
                 len = 1;
                 memcpy(&recLen2, &tp->baseAddr[tp->currPos], sizeof(recLen2));
-                tp->currPos += sizeof(recLen2);
+                tp->currPos =+ sizeof(recLen2);
                 }
             else
                 {
@@ -2684,13 +2691,9 @@ static void mt669FuncReadBkw(void)
 
             if ((len != 1) || (recLen0 != recLen2))
                 {
-                logDtError(LogErrorLocation, "Channel %02o - invalid record length2: %d %08X != %08X", activeChannel->id, len, recLen0, recLen2);
+                logDtError(LogErrorLocation, "channel %02o - invalid record length2: %d %08X != %08X", activeChannel->id, len, recLen0, recLen2);
                 tp->alert     = TRUE;
-                tp->errorCode = EcMiscUnitError;
-#if DEBUG
-                fprintf(mt669Log, "(mt669  ) Invalid record length %08X != %08X at position %d",
-                    recLen0, recLen2, tp->currPos);
-#endif
+                tp->errorCode = EcDiagnosticError;
 
                 return;
                 }
@@ -2699,6 +2702,7 @@ static void mt669FuncReadBkw(void)
         /*
         **  Read and verify the actual raw data.
         */
+        //len = (u32)fread(rawBuffer, 1, recLen1, activeDevice->fcb[unitNo]);
         if ((tp->currPos + recLen1) <= tp->maxOffset)
             {
             len = recLen1;
@@ -2712,13 +2716,9 @@ static void mt669FuncReadBkw(void)
 
         if (recLen1 != (u32)len)
             {
-            logDtError(LogErrorLocation, "Channel %02o - short tape record read: %d", activeChannel->id, len);
+            logDtError(LogErrorLocation, "channel %02o - short tape record read: %d", activeChannel->id, len);
             tp->alert     = TRUE;
-            tp->errorCode = EcMiscUnitError;
-#if DEBUG
-                fprintf(mt669Log, "(mt669  ) Short tape record length %d not %d at position %d",
-                    len, recLen1, tp->currPos);
-#endif
+            tp->errorCode = EcDiagnosticError;
 
             return;
             }
@@ -2726,21 +2726,21 @@ static void mt669FuncReadBkw(void)
         /*
         **  Position to the TAP record header.
         */
+        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos = position;
 
         /*
         **  Convert the raw data into PP words suitable for a channel.
         */
-        mt669PackAndConvert(recLen1);
+        mt679PackAndConvert(recLen1);
 
         /*
         **  Setup length and buffer pointer.
         */
 #if DEBUG
-        fprintf(mt669Log, "(mt669  ) Read bkwd %d PP words (%d 8-bit bytes)\n", activeDevice->recordLength, recLen1);
+        fprintf(mt679Log, "(mt679  ) Read bkwd %d PP words (%d 8-bit bytes)\n", activeDevice->recordLength, recLen1);
 #endif
 
-        tp->frameCount   = (PpWord)recLen1;
         tp->recordLength = activeDevice->recordLength;
         tp->bp           = tp->ioBuffer + tp->recordLength - 1;
         }
@@ -2752,7 +2752,7 @@ static void mt669FuncReadBkw(void)
         tp->fileMark = TRUE;
 
 #if DEBUG
-        fprintf(mt669Log, "(mt669  ) Tape mark at position %d", tp->currPos);
+        fprintf(mt679Log, "(mt679  ) Tape mark at position %d", tp->currPos);
 #endif
         }
 
@@ -2778,7 +2778,7 @@ static void mt669FuncReadBkw(void)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669FuncForespace(void)
+static void mt679FuncForespace(void)
     {
     u32       len;
     u32       recLen0;
@@ -2794,11 +2794,13 @@ static void mt669FuncForespace(void)
     /*
     **  Determine if the tape is at the load point.
     */
+    //position = ftell(activeDevice->fcb[unitNo]);
     position = tp->currPos;
 
     /*
     **  Read and verify TAP record length header.
     */
+    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen0)) <= tp->maxOffset)
         {
         len = 1;
@@ -2821,7 +2823,7 @@ static void mt669FuncForespace(void)
 //            tp->endOfTape = TRUE;
             tp->fileMark = TRUE;
 #if DEBUG
-            fprintf(mt669Log, "(mt669  ) TAP is at EOF (simulate tape mark)\n");
+            fprintf(mt679Log, "(mt679  ) TAP is at EOF (simulate tape mark)\n");
 #endif
             }
 
@@ -2845,12 +2847,9 @@ static void mt669FuncForespace(void)
     */
     if (recLen1 > MaxByteBuf)
         {
-        logDtError(LogErrorLocation, "Channel %02o - tape record too long: %d, current position %d", activeChannel->id, recLen1, tp->currPos);
+        logDtError(LogErrorLocation, "channel %02o - tape record too long: %d", activeChannel->id, recLen1);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
-#if DEBUG
-            fprintf(mt669Log, "(mt669  ) Record too long %d at position %d", recLen1, tp->currPos);
-#endif
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2864,7 +2863,7 @@ static void mt669FuncForespace(void)
         tp->blockNo += 1;
 
 #if DEBUG
-        fprintf(mt669Log, "(mt669  ) Tape mark at position %d", tp->currPos);
+        fprintf(mt679Log, "(mt679  ) Tape marku at position %d", tp->currPos);
 #endif
 
         return;
@@ -2873,11 +2872,12 @@ static void mt669FuncForespace(void)
     /*
     **  Skip the actual raw data.
     */
+    //if (fseek(activeDevice->fcb[unitNo], recLen1, SEEK_CUR) != 0)
     if ((tp->currPos + recLen1) > tp->maxOffset)
         {
-        logDtError(LogErrorLocation, "Channel %02o - short tape record read: %d", activeChannel->id, len);
+        logDtError(LogErrorLocation, "channel %02o - short tape record read: %d", activeChannel->id, len);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2889,6 +2889,7 @@ static void mt669FuncForespace(void)
     /*
     **  Read and verify the TAP record length trailer.
     */
+    //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
         {
         len = 1;
@@ -2902,9 +2903,9 @@ static void mt669FuncForespace(void)
 
     if (len != 1)
         {
-        logDtError(LogErrorLocation, "Channel %02o - missing tape record trailer", activeChannel->id);
+        logDtError(LogErrorLocation, "channel %02o - missing tape record trailer", activeChannel->id);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -2926,13 +2927,14 @@ static void mt669FuncForespace(void)
 
         if (recLen1 == ((recLen2 >> 8) & 0xFFFFFF))
             {
+            //fseek(activeDevice->fcb[unitNo], 1, SEEK_CUR);
             tp->currPos += 1;
             }
         else
             {
-            logDtError(LogErrorLocation, "Channel %02o - invalid tape record trailer: %d", activeChannel->id, recLen2);
+            logDtError(LogErrorLocation, "channel %02o - invalid tape record trailer: %d", activeChannel->id, recLen2);
             tp->alert     = TRUE;
-            tp->errorCode = EcMiscUnitError;
+            tp->errorCode = EcDiagnosticError;
 
             return;
             }
@@ -2949,7 +2951,7 @@ static void mt669FuncForespace(void)
 **  Returns:        Nothing.
 **
 **------------------------------------------------------------------------*/
-static void mt669FuncBackspace(void)
+static void mt679FuncBackspace(void)
     {
     u32       len;
     u32       recLen0;
@@ -2965,6 +2967,7 @@ static void mt669FuncBackspace(void)
     /*
     **  Check if we are already at the beginning of the tape.
     */
+    //position = ftell(activeDevice->fcb[unitNo]);
     position = tp->currPos;
     if (position == 0)
         {
@@ -2978,9 +2981,12 @@ static void mt669FuncBackspace(void)
     **  of the record (leaving the file position ahead of the just read
     **  record trailer).
     */
-    if (tp->currPos > 4)
+    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
+    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
+    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
+    if (tp->currPos > sizeof(recLen0))
         {
-        tp->currPos -= 4;
+        tp->currPos -= sizeof(recLen0);
         }
     else
         {
@@ -2998,9 +3004,9 @@ static void mt669FuncBackspace(void)
 
     if (len != 1)
         {
-        logDtError(LogErrorLocation, "Channel %02o - missing tape record trailer", activeChannel->id);
+        logDtError(LogErrorLocation, "channel %02o - missing tape record trailer", activeChannel->id);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -3022,9 +3028,9 @@ static void mt669FuncBackspace(void)
     */
     if (recLen1 > MaxByteBuf)
         {
-        logDtError(LogErrorLocation, "Channel %02o - tape record too long: %d", activeChannel->id, recLen1);
+        logDtError(LogErrorLocation, "channel %02o - tape record too long: %d", activeChannel->id, recLen1);
         tp->alert     = TRUE;
-        tp->errorCode = EcMiscUnitError;
+        tp->errorCode = EcDiagnosticError;
 
         return;
         }
@@ -3036,16 +3042,17 @@ static void mt669FuncBackspace(void)
         **  Skip backward over the TAP record body and header.
         */
         position -= 4 + recLen1;
+        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos = position;
 
         /*
         **  Read and verify the TAP record header.
         */
+        //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
         if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
             {
             len = 1;
-            memcpy(&recLen2, &tp->baseAddr[tp->currPos],
-                sizeof(recLen2));
+            memcpy(&recLen2, &tp->baseAddr[tp->currPos], sizeof(recLen2));
             tp->currPos += sizeof(recLen2);
             }
         else
@@ -3055,9 +3062,9 @@ static void mt669FuncBackspace(void)
 
         if (len != 1)
             {
-            logDtError(LogErrorLocation, "Channel %02o - missing TAP record header", activeChannel->id);
+            logDtError(LogErrorLocation, "channel %02o - missing TAP record header", activeChannel->id);
             tp->alert     = TRUE;
-            tp->errorCode = EcMiscUnitError;
+            tp->errorCode = EcDiagnosticError;
 
             return;
             }
@@ -3068,7 +3075,9 @@ static void mt669FuncBackspace(void)
             **  This is more weird shit to deal with "padded" TAP records.
             */
             position -= 1;
-            tp->currPos = position;
+            //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
+            tp->currPos -= 1;
+            //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
             if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
                 {
                 len = 1;
@@ -3078,13 +3087,13 @@ static void mt669FuncBackspace(void)
             else
                 {
                 len = 0;
-                } 
+                }
 
             if ((len != 1) || (recLen0 != recLen2))
                 {
-                logDtError(LogErrorLocation, "Channel %02o - invalid record length2: %d %08X != %08X", activeChannel->id, len, recLen0, recLen2);
+                logDtError(LogErrorLocation, "channel %02o - invalid record length2: %d %08X != %08X", activeChannel->id, len, recLen0, recLen2);
                 tp->alert     = TRUE;
-                tp->errorCode = EcMiscUnitError;
+                tp->errorCode = EcDiagnosticError;
 
                 return;
                 }
@@ -3093,6 +3102,7 @@ static void mt669FuncBackspace(void)
         /*
         **  Position to the TAP record header.
         */
+        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos = position;
         }
     else
@@ -3103,7 +3113,7 @@ static void mt669FuncBackspace(void)
         tp->fileMark = TRUE;
 
 #if DEBUG
-        fprintf(mt669Log, "(mt669  ) Tape mark at position", tp->currPos);
+        fprintf(mt679Log, "(mt679  ) Tape mark at position %d", tp->currPos);
 #endif
         }
 
@@ -3129,252 +3139,294 @@ static void mt669FuncBackspace(void)
 **  Returns:        String equivalent of function code.
 **
 **------------------------------------------------------------------------*/
-static char *mt669Func2String(PpWord funcCode)
+static char *mt679Func2String(PpWord funcCode)
     {
     static char buf[40];
 
 #if DEBUG
     switch (funcCode)
         {
-    case Fc669FormatUnit:
-        return "Fc669FormatUnit";
+    case Fc679ClearUnit:
+        return "ClearUnit";
 
-    case Fc669LoadConversion1:
-        return "Fc669LoadConversion1";
+    case Fc679Release:
+        return "Release";
 
-    case Fc669LoadConversion2:
-        return "Fc669LoadConversion2";
+    case Fc679FormatUnit:
+        return "FormatUnit";
 
-    case Fc669LoadConversion3:
-        return "Fc669LoadConversion3";
+    case Fc679OppositeParity:
+        return "OppositeParity";
 
-    case Fc669Connect + 0:
-        return "Fc669Connect + 0";
+    case Fc679OppositeDensity:
+        return "OppositeDensity";
 
-    case Fc669Connect + 1:
-        return "Fc669Connect + 1";
+    case Fc679SetReadClipNorm:
+        return "SetReadClipNorm";
 
-    case Fc669Connect + 2:
-        return "Fc669Connect + 2";
+    case Fc679SetReadClipHigh:
+        return "SetReadClipHigh";
 
-    case Fc669Connect + 3:
-        return "Fc669Connect + 3";
+    case Fc679SetReadClipLow:
+        return "SetReadClipLow";
 
-    case Fc669Connect + 4:
-        return "Fc669Connect + 4";
+    case Fc679SetReadClipHyper:
+        return "SetReadClipHyper";
 
-    case Fc669Connect + 5:
-        return "Fc669Connect + 5";
+    case Fc679Rewind:
+        return "Rewind";
 
-    case Fc669Connect + 6:
-        return "Fc669Connect + 6";
+    case Fc679RewindUnload:
+        return "RewindUnload";
 
-    case Fc669Connect + 7:
-        return "Fc669Connect + 7";
+    case Fc679StopMotion:
+        return "StopMotion";
 
-    case Fc669Release:
-        return "Fc669Release";
+    case Fc679GeneralStatus:
+        return "GeneralStatus";
 
-    case Fc669ClearReserve:
-        return "Fc669ClearReserve";
+    case Fc679DetailedStatus:
+        return "DetailedStatus";
 
-    case Fc669ClearOppositeReserve:
-        return "Fc669ClearOppositeReserve";
+    case Fc679UnitStatus:
+        return "UnitStatus";
 
-    case Fc669Rewind:
-        return "Fc669Rewind";
+    case Fc679Forespace:
+        return "Forespace";
 
-    case Fc669RewindUnload:
-        return "Fc669RewindUnload";
+    case Fc679Backspace:
+        return "Backspace";
 
-    case Fc669SearchTapeMarkF:
-        return "Fc669SearchTapeMarkF";
+    case Fc679CtrledBackspace:
+        return "CtrledBackspace";
 
-    case Fc669SearchTapeMarkB:
-        return "Fc669SearchTapeMarkB";
+    case Fc679SearchTapeMarkF:
+        return "SearchTapeMarkF";
 
-    case Fc669CtrlForespaceFindGap:
-        return "Fc669CtrlForespaceFindGap";
+    case Fc679SearchTapeMarkB:
+        return "SearchTapeMarkB";
 
-    case Fc669CtrlBackspaceFindGap:
-        return "Fc669CtrlBackspaceFindGap";
+    case Fc679Connect + 0:
+        return "Connect + 0";
 
-    case Fc669Forespace:
-        return "Fc669Forespace";
+    case Fc679Connect + 1:
+        return "Connect + 1";
 
-    case Fc669Backspace:
-        return "Fc669Backspace";
+    case Fc679Connect + 2:
+        return "Connect + 2";
 
-    case Fc669WriteTapeMark:
-        return "Fc669WriteTapeMark";
+    case Fc679Connect + 3:
+        return "Connect + 3";
 
-    case Fc669EraseToEOT:
-        return "Fc669EraseToEOT";
+    case Fc679Connect + 4:
+        return "Connect + 4";
 
-    case Fc669CtrledForespace:
-        return "Fc669CtrledForespace";
+    case Fc679Connect + 5:
+        return "Connect + 5";
 
-    case Fc669CtrledBackspace:
-        return "Fc669CtrledBackspace";
+    case Fc679Connect + 6:
+        return "Connect + 6";
 
-    case Fc669StopMotion:
-        return "Fc669StopMotion";
+    case Fc679Connect + 7:
+        return "Connect + 7";
 
-    case Fc669ReadFwd:
-        return "Fc669ReadFwd";
+    case Fc679Connect + 010:
+        return "Connect + 010";
 
-    case Fc669ReadBkw:
-        return "Fc669ReadBkw";
+    case Fc679Connect + 011:
+        return "Connect + 011";
 
-    case Fc669Write:
-        return "Fc669Write";
+    case Fc679Connect + 012:
+        return "Connect + 012";
 
-    case Fc669WriteOdd12:
-        return "Fc669WriteOdd12";
+    case Fc679Connect + 013:
+        return "Connect + 013";
 
-    case Fc669WriteOdd:
-        return "Fc669WriteOdd";
+    case Fc679Connect + 014:
+        return "Connect + 014";
 
-    case Fc669GeneralStatus:
-        return "Fc669GeneralStatus";
+    case Fc679Connect + 015:
+        return "Connect + 015";
 
-    case Fc669DetailedStatus:
-        return "Fc669DetailedStatus";
+    case Fc679Connect + 016:
+        return "Connect + 016";
 
-    case Fc669CumulativeStatus:
-        return "Fc669CumulativeStatus";
+    case Fc679Connect + 017:
+        return "Connect + 017";
 
-    case Fc669UnitReadyStatus:
-        return "Fc669UnitReadyStatus";
+    case Fc679WarmstartHighDens + 0:
+        return "WarmstartHighDens + 0";
 
-    case Fc669SetReadClipNorm:
-        return "Fc669SetReadClipNorm";
+    case Fc679WarmstartHighDens + 1:
+        return "WarmstartHighDens + 1";
 
-    case Fc669SetReadClipHigh:
-        return "Fc669SetReadClipHigh";
+    case Fc679WarmstartHighDens + 2:
+        return "WarmstartHighDens + 2";
 
-    case Fc669SetReadClipLow:
-        return "Fc669SetReadClipLow";
+    case Fc679WarmstartHighDens + 3:
+        return "WarmstartHighDens + 3";
 
-    case Fc669SetReadClipHyper:
-        return "Fc669SetReadClipHyper";
+    case Fc679WarmstartHighDens + 4:
+        return "WarmstartHighDens + 4";
 
-    case Fc669ReadSprktDlyNorm:
-        return "Fc669ReadSprktDlyNorm";
+    case Fc679WarmstartHighDens + 5:
+        return "WarmstartHighDens + 5";
 
-    case Fc669ReadSprktDlyIncr:
-        return "Fc669ReadSprktDlyIncr";
+    case Fc679WarmstartHighDens + 6:
+        return "WarmstartHighDens + 6";
 
-    case Fc669ReadSprktDlyDecr:
-        return "Fc669ReadSprktDlyDecr";
+    case Fc679WarmstartHighDens + 7:
+        return "WarmstartHighDens + 7";
 
-    case Fc669OppParity:
-        return "Fc669OppParity";
+    case Fc679WarmstartHighDens + 010:
+        return "WarmstartHighDens + 010";
 
-    case Fc669OppDensity:
-        return "Fc669OppDensity";
+    case Fc679WarmstartHighDens + 011:
+        return "WarmstartHighDens + 011";
 
-    case Fc669LongForespace:
-        return "Fc669LongForespace";
+    case Fc679WarmstartHighDens + 012:
+        return "WarmstartHighDens + 012";
 
-    case Fc669LongBackspace:
-        return "Fc669LongBackspace";
+    case Fc679WarmstartHighDens + 013:
+        return "WarmstartHighDens + 013";
 
-    case Fc669RereadFwd:
-        return "Fc669RereadFwd";
+    case Fc679WarmstartHighDens + 014:
+        return "WarmstartHighDens + 014";
 
-    case Fc669RereadBkw:
-        return "Fc669RereadBkw";
+    case Fc679WarmstartHighDens + 015:
+        return "WarmstartHighDens + 015";
 
-    case Fc669ReadBkwOddLenParity:
-        return "Fc669ReadBkwOddLenParity";
+    case Fc679WarmstartHighDens + 016:
+        return "WarmstartHighDens + 016";
 
-    case Fc669RereadBkwOddLenParity:
-        return "Fc669RereadBkwOddLenParity";
+    case Fc679WarmstartHighDens + 017:
+        return "WarmstartHighDens + 017";
 
-    case Fc669RepeatRead:
-        return "Fc669RepeatRead";
+    case Fc679WarmstartLowDens + 0:
+        return "WarmstartLowDens + 0";
 
-    case Fc669Erase:
-        return "Fc669Erase";
+    case Fc679WarmstartLowDens + 1:
+        return "WarmstartLowDens + 1";
 
-    case Fc669WriteRepos:
-        return "Fc669WriteRepos";
+    case Fc679WarmstartLowDens + 2:
+        return "WarmstartLowDens + 2";
 
-    case Fc669WriteEraseRepos:
-        return "Fc669WriteEraseRepos";
+    case Fc679WarmstartLowDens + 3:
+        return "WarmstartLowDens + 3";
 
-    case Fc669WriteReposiCtrl:
-        return "Fc669WriteReposiCtrl";
+    case Fc679WarmstartLowDens + 4:
+        return "WarmstartLowDens + 4";
 
-    case Fc669WriteEraseReposCtrl:
-        return "Fc669WriteEraseReposCtrl";
+    case Fc679WarmstartLowDens + 5:
+        return "WarmstartLowDens + 5";
 
-    case Fc669EraseRepos:
-        return "Fc669EraseRepos";
+    case Fc679WarmstartLowDens + 6:
+        return "WarmstartLowDens + 6";
 
-    case Fc669EraseEraseRepos:
-        return "Fc669EraseEraseRepos";
+    case Fc679WarmstartLowDens + 7:
+        return "WarmstartLowDens + 7";
 
-    case Fc669LoadReadRam:
-        return "Fc669LoadReadRam";
+    case Fc679WarmstartLowDens + 010:
+        return "WarmstartLowDens + 010";
 
-    case Fc669LoadWriteRam:
-        return "Fc669LoadWriteRam";
+    case Fc679WarmstartLowDens + 011:
+        return "WarmstartLowDens + 011";
 
-    case Fc669LoadReadWriteRam:
-        return "Fc669LoadReadWriteRam";
+    case Fc679WarmstartLowDens + 012:
+        return "WarmstartLowDens + 012";
 
-    case Fc669CopyReadRam:
-        return "Fc669CopyReadRam";
+    case Fc679WarmstartLowDens + 013:
+        return "WarmstartLowDens + 013";
 
-    case Fc669CopyWriteRam:
-        return "Fc669CopyWriteRam";
+    case Fc679WarmstartLowDens + 014:
+        return "WarmstartLowDens + 014";
 
-    case Fc669FormatTcuUnitStatus:
-        return "Fc669FormatTcuUnitStatus";
+    case Fc679WarmstartLowDens + 015:
+        return "WarmstartLowDens + 015";
 
-    case Fc669CopyTcuStatus:
-        return "Fc669CopyTcuStatus";
+    case Fc679WarmstartLowDens + 016:
+        return "WarmstartLowDens + 016";
 
-    case Fc669SendTcuCmd:
-        return "Fc669SendTcuCmd";
+    case Fc679WarmstartLowDens + 017:
+        return "WarmstartLowDens + 017";
 
-    case Fc669SetQuartReadSprktDly:
-        return "Fc669SetQuartReadSprktDly";
+    case Fc679ReadFwd:
+        return "ReadFwd";
 
-    case Fc669ConnectRewindRead + 0:
-        return "Fc669ConnectRewindRead + 0";
+    case Fc679ReadBkw:
+        return "ReadBkw";
 
-    case Fc669ConnectRewindRead + 1:
-        return "Fc669ConnectRewindRead + 1";
+    case Fc679CopyReadConv:
+        return "CopyReadConv";
 
-    case Fc669ConnectRewindRead + 2:
-        return "Fc669ConnectRewindRead + 2";
+    case Fc679CopyWriteConv:
+        return "CopyWriteConv";
 
-    case Fc669ConnectRewindRead + 3:
-        return "Fc669ConnectRewindRead + 3";
+    case Fc679Write:
+        return "Write";
 
-    case Fc669ConnectRewindRead + 4:
-        return "Fc669ConnectRewindRead + 4";
+    case Fc679WriteShort:
+        return "WriteShort";
 
-    case Fc669ConnectRewindRead + 5:
-        return "Fc669ConnectRewindRead + 5";
+    case Fc679WriteTapeMark:
+        return "WriteTapeMark";
 
-    case Fc669ConnectRewindRead + 6:
-        return "Fc669ConnectRewindRead + 6";
+    case Fc679Erase:
+        return "Erase";
 
-    case Fc669ConnectRewindRead + 7:
-        return "Fc669ConnectRewindRead + 7";
+    case Fc679EraseDataSecurity:
+        return "EraseDataSecurity";
 
-    case Fc669MasterClear:
-        return "Fc669MasterClear";
+    case Fc679LoadReadConv:
+        return "LoadReadConv";
 
-    case Fc669ClearUnit:
-        return "Fc669ClearUnit";
+    case Fc679LoadWriteConv:
+        return "LoadWriteConv";
+
+    case Fc679RewindOnEOT:
+        return "RewindOnEOT";
+
+    case Fc679WaitForStop:
+        return "WaitForStop";
+
+    case Fc679TestVelocityVect:
+        return "TestVelocityVect";
+
+    case Fc679MeasureGapSizeFwd:
+        return "MeasureGapSizeFwd";
+
+    case Fc679MeasureGapSizeBkw:
+        return "MeasureGapSizeBkw";
+
+    case Fc679MeasureStartTFwd:
+        return "MeasureStartTFwd";
+
+    case Fc679SetTransferCheckCh:
+        return "SetTransferCheckCh";
+
+    case Fc679SetLoopWTRTcu:
+        return "SetLoopWTRTcu";
+
+    case Fc679SetLoopWTR1TU:
+        return "SetLoopWTR1TU";
+
+    case Fc679SetLoopWTR2TU:
+        return "SetLoopWTR2TU";
+
+    case Fc679SetEvenWrParity:
+        return "SetEvenWrParity";
+
+    case Fc679SetEvenChParity:
+        return "SetEvenChParity";
+
+    case Fc679ForceDataErrors:
+        return "ForceDataErrors";
+
+    case Fc679MasterClear:
+        return "MasterClear";
         }
 #endif
-    sprintf(buf, "(mt669  ) Unknown Function: %04o", funcCode);
+    sprintf(buf, "(mt679  ) Unknown Function: %04o", funcCode);
 
     return (buf);
     }

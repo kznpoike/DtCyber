@@ -228,9 +228,9 @@ typedef struct diskParam
     **  Memory mapped file support fields
     */
     u8               *baseAddr;
-    i32              maxOffset;   // Maximum zero based index into the memory array
+    i32              maxOffset;
     i32              currPos;
-    i32              flushCount;  // Used for interim asynchronous msync calls
+    i32              flushCount;      // Used for interim asynchronous msync calls
     } DiskParam;
 
 /*
@@ -914,10 +914,12 @@ static FILE *dd8xxMount(char *deviceName, DiskParam *dp)
             dp->cylinder = dp->size.maxCylinders - 1;
             dp->track    = dp->size.maxTracks - 1;
             dp->sector   = dp->size.maxSectors - 1;
-            i32 lastOffset = dd8xxSeek(dp) + (SectorSize * 2);
+            i32 lastOffset = dd8xxSeek(dp) + dp->sectorSize;
             if (lastOffset != sb.st_size)
                 {
-                logDtError(LogErrorLocation, "Backing file size mismatch wanting %d found %d", lastOffset, sb.st_size);
+#if DEBUG
+                fprintf(dd8xxLog, "\n(dd8xx  ) Found existing backing file of size %d, we need size %d", lastOffset, sb.st_size);
+#endif
                 fclose(fcb);
                 fcb = NULL;
                 }
@@ -945,10 +947,11 @@ static FILE *dd8xxMount(char *deviceName, DiskParam *dp)
         dp->track    = dp->size.maxTracks - 1;
         dp->sector   = dp->size.maxSectors - 1;
         dp->currPos = dd8xxSeek(dp);
-        dp->maxOffset = dp->currPos + SectorSize * 2;
+        dp->maxOffset = dp->currPos + dp->sectorSize;
         //  Add proper error handling below ??
-        fseek(fcb, dp->currPos, SEEK_SET);
-        fwrite(&mySector, sizeof(mySector), 1, fcb);
+        char dummy[] = "1234";
+        fseek(fcb, (dp->maxOffset - strlen(dummy)), SEEK_SET);
+        fwrite(dummy, strlen(dummy), 1, fcb);
         fflush(fcb);
         /*
         ** Set up the memory mapping for the device
@@ -1978,7 +1981,7 @@ static void dd8xxWriteClassic(DiskParam *dp, FILE *fcb, PpWord data)
         memcpy(&dp->baseAddr[dp->currPos], &dp->buffer, dp->sectorSize);
         dp->currPos += dp->sectorSize;
         dp->flushCount++;
-        if (dp->flushCount > 20)
+        if (dp->flushCount > 100)
             {
             /*
             ** Issue periodic asynchronous msync calls to flush data
