@@ -29,7 +29,7 @@ LIBS    = -lm -lfreetype -lxkbcommon -lfontconfig -lwayland-client -lwayland-cur
 LDFLAGS = -s -L/usr/lib
 INCL    = -I/usr/include/freetype2 -I/usr/include/libpng16
 
-CFLAGS  = -O2 -I. $(INCL) -std=gnu99 -march=armv8-a -mcpu=cortex-a53
+CFLAGS  = -O3 -I. $(INCL) -std=gnu99 -march=armv8-a
 
 HDRS    =   const.h                          \
             cyber_channel_linux.h            \
