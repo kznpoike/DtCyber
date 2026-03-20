@@ -189,7 +189,7 @@ else {
     "COPY,VALINDZ,VI.",
     "CLEAR.",
     "ISF."
-  ], "CREVAL"))
+  ]))
   .then(() => dtc.sleep(12000))
   .then(() => dtc.say("Create user INSTALL ..."))
   .then(() => dtc.dis([
@@ -197,7 +197,7 @@ else {
     "MODVAL,OP=Z./INSTALL,RP=7,SC=77B,CM=77B,EC=77B",
     "MODVAL,OP=Z./INSTALL,OF=7,DB=7,DS=7,FS=7,FC=7",
     "MODVAL,OP=Z./INSTALL,CS=7,CP=77B,CC=77B,DF=77B"
-  ], "CREINST"))
+  ]))
   .then(() => dtc.say("Apply mods to OPL485, and copy it to INSTALL catalog ..."))
   .then(() => dtc.mount(13, 0, 1, "tapes/opl485.tap"))
   .then(() => dtc.runJob(11, 4, "decks/create-opl485.job", [51]))
@@ -250,7 +250,7 @@ else {
       "COPY,VALINDZ,VI.",
       "CLEAR.",
       "ISF."
-    ], "CREPLVL"))
+    ]))
     .then(() => dtc.sleep(12000))
     .then(() => dtc.say("Create user PLATO in family PLATO ..."))
     .then(() => dtc.dis([
@@ -261,7 +261,7 @@ else {
       "MODVAL,FM=PLATO,OP=Z./PLATO,DB=7,DS=7,FS=7,FC=7",
       "MODVAL,FM=PLATO,OP=Z./PLATO,CS=7,CP=77B,CC=77B",
       "MODVAL,FM=PLATO,OP=Z./PLATO,DF=77B"
-    ], "CREPLUS"))
+    ]))
     .then(() => dtc.say("Get PLATO PFDUMP tape ..."))
     .then(() => dtc.wget("https://www.dropbox.com/s/q8v19dxqjfr7j2w/plato4nos13.tap.bz2?dl=1", "tapes", (byteCount, contentLength) => {
       maxProgressLen = reportProgress(byteCount, contentLength, maxProgressLen);
