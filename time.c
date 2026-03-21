@@ -95,10 +95,15 @@ void sleepMsec(u32 msec)
     Sleep(msec);
 #else
     struct timespec ts;
+    struct timespec tr;
 
     ts.tv_sec  = msec / 1000;
     ts.tv_nsec = (msec % 1000) * 1000000;
-    nanosleep(&ts, &ts);
+    int ns = nanosleep(&ts, &tr);
+    if ( (ns == -1) && (errno == EINTR))
+        {
+        nanosleep(&tr, NULL);
+        }
 #endif
     }
 
