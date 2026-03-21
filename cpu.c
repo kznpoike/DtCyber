@@ -397,7 +397,7 @@ void cpuInit(char *model, u32 memory, u32 emBanks, ExtMemory emType)
             */
             if (fread(cpMem, sizeof(CpWord), cpuMaxMemory, cmHandle) != cpuMaxMemory)
                 {
-                printf("(cpu    ) Unexpected length of CM backing file, clearing CM\n");
+                logDtError(LogErrorLocation, "(cpu    ) Unexpected length of CM backing file, clearing CM\n");
                 memset(cpMem, 0, cpuMaxMemory);
                 }
             }
@@ -427,7 +427,7 @@ void cpuInit(char *model, u32 memory, u32 emBanks, ExtMemory emType)
             */
             if (fread(extMem, sizeof(CpWord), extMaxMemory, ecsHandle) != extMaxMemory)
                 {
-                printf("(cpu    ) Unexpected length of ECS backing file, clearing ECS\n");
+                logDtError(LogErrorLocation, "(cpu    ) Unexpected length of ECS backing file, clearing ECS\n");
                 memset(extMem, 0, extMaxMemory);
                 }
             }
@@ -481,12 +481,12 @@ void cpuInit(char *model, u32 memory, u32 emBanks, ExtMemory emType)
     */
     if ((features & IsCyber180) == 0)
         {
-        printf("(cpu    ) CPU model %s initialised (%d CPU%s, CM: %o words, ECS: %o words)\n",
+        logDtError(LogErrorLocation, "(cpu    ) CPU model %s initialised (%d CPU%s, CM: %o words, ECS: %o words)\n",
                model, cpuCount, cpuCount > 1 ? "'s" : "", cpuMaxMemory, extMaxMemory);
         }
     else
         {
-        printf("(cpu    ) CPU model %s initialised (%d CPU%s, CM: %dM bytes)\n",
+        logDtError(LogErrorLocation, "(cpu    ) CPU model %s initialised (%d CPU%s, CM: %dM bytes)\n",
                model, cpuCount, cpuCount > 1 ? "'s" : "", (8 * cpuMaxMemory) / OneMegabyte);
         }
 #if DEBUG_ECS || DEBUG_UEM || DEBUG_DDP
