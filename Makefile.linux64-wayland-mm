@@ -139,7 +139,7 @@ webterm/www/js/node_modules:
 
 clean:
 	rm -f *.o; \
-	rm dtcyber \
+	rm dtcyber; \
 	$(MAKE) -C automation clean; \
 	$(MAKE) -C rje-station clean; \
 	$(MAKE) -C stk clean; \

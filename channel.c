@@ -367,6 +367,12 @@ void channelTerminate(void)
                 {
                 mt679Terminate(dp);
                 }
+
+            if (dp->devType == DtDd8xx)
+                {
+                dd8xxTerminate(dp);
+                }
+
             if (dp->devType == DtHcp)
                 {
                 cciHipTerminate(dp);

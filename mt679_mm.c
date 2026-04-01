@@ -295,6 +295,9 @@ void mt679Init(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
         {
         mt679Log = fopen("mt679log.txt", "wt");
         }
+    fprintf(mt679Log, "(mt679  ) Initializing eqNo %0o unitNo %0o on channel No %0o for device name %s\n",
+        eqNo, unitNo, channelNo, deviceName != NULL ? deviceName : "None");
+    fflush(mt679Log);
 #endif
 
     /*
@@ -492,6 +495,52 @@ void mt679Terminate(DevSlot *dp)
         fclose(cp->convFileHandle);
         cp->convFileHandle = NULL;
         }
+
+    /*
+    **  Check and close out any mounted tapes.
+    */
+    for (int unitNo = 0; unitNo < MaxUnits2; unitNo++)
+        {
+        if (dp->fcb[unitNo] != NULL)
+            {
+            /*
+            **  Close the file.
+            */
+            TapeParam *tp = (TapeParam *)dp->context[unitNo];
+            if (msync(tp->baseAddr, tp->maxOffset + 1, MS_SYNC) == -1)
+                {
+                logError(LogErrorLocation, "(mt679  ) Unit %d final synchronization failed code %d\n",
+                    unitNo, errno);
+                }
+            if (munmap(tp->baseAddr, tp->maxOffset + 1) == -1)
+                {
+                logError(LogErrorLocation, "(mt679  ) Unit %d final unmap failed code %d\n",
+                    unitNo, errno);
+                }
+            if (tp->ringIn)
+                {
+                /*
+                **  Truncate the backing file to the actual size written.
+                */
+                if (ftruncate(fileno(dp->fcb[unitNo]), (tp->currPos + 1)) == -1)
+                    {
+                    logError(LogErrorLocation, "(mt679  ) Unit %d final truncate failed code %d\n",
+                        unitNo, errno);
+                    }
+                else
+                    {
+                    fflush(dp->fcb[unitNo]);
+                    logError(LogErrorLocation, "(mt679  ) Unit %d truncated to size %d\n",
+                        unitNo, tp->currPos + 1);
+                    }
+                }
+            tp->maxOffset = 0;
+            tp->baseAddr = NULL;
+            tp->flushCount = 0;
+            fclose(dp->fcb[unitNo]);
+            dp->fcb[unitNo] = NULL;
+            }
+        }
     }
 
 /*--------------------------------------------------------------------------
@@ -649,7 +698,7 @@ void mt679LoadTape(char *params)
         fileno(fcb), 0);
     if (tp->baseAddr == MAP_FAILED)
         {
-        sprintf(outBuf, "(mt669  ) Failed to map %s with error code %d\n",
+        sprintf(outBuf, "(mt679  ) Failed to map %s with error code %d\n",
             tp->fileName, errno);
         opDisplay(outBuf);
         tp->baseAddr = NULL;
@@ -661,7 +710,8 @@ void mt679LoadTape(char *params)
         return;
         }
 #if DEBUG
-        fprintf(mt669Log, "(mt679  ) Loaded, opened and mapped %s\n", tp->fileName);
+        fprintf(mt679Log, "(mt679  ) Loaded, opened and mapped %s\n", tp->fileName);
+        fflush(mt679Log);
 #endif
 
     /*
@@ -949,7 +999,6 @@ static void mt679SetupStatus(TapeParam *tp)
         if (tp->unitReady)
             {
             tp->deviceStatus[1] |= St679Ready;
-            //if (ftell(activeDevice->fcb[activeDevice->selectedUnit]) > MaxTapeSize)
             if (tp->currPos > MaxTapeSize)
                 {
                 tp->deviceStatus[1] |= St679EOT;
@@ -1136,6 +1185,7 @@ static void mt679UnpackConversionTable(u8 *convTable)
             }
         }
     fprintf(mt679Log, "\n");
+    fflush(mt679Log);
 #endif
     }
 
@@ -1178,6 +1228,7 @@ static void mt679Unpack6BitTable(u8 *convTable)
             }
         }
     fprintf(mt679Log, "\n");
+    fflush(mt679Log);
 #endif
     }
 
@@ -1306,7 +1357,6 @@ static FcStatus mt679Func(PpWord funcCode)
         if ((unitNo != -1) && tp->unitReady)
             {
             mt679ResetStatus(tp);
-            //fseek(activeDevice->fcb[unitNo], 0, SEEK_SET);
             tp->currPos = 0;
             if (tp->blockNo != 0)
                 {
@@ -1535,7 +1585,6 @@ static FcStatus mt679Func(PpWord funcCode)
 
         mt679ResetStatus(tp);
         activeDevice->selectedUnit = unitNo;
-        //fseek(activeDevice->fcb[unitNo], 0, SEEK_SET);
         tp->currPos = 0;
         cp->selectedConversion = 0;
         cp->packedMode         = TRUE;
@@ -1627,28 +1676,16 @@ static FcStatus mt679Func(PpWord funcCode)
             {
             mt679ResetStatus(tp);
             tp->bp       = tp->ioBuffer;
-            //position     = ftell(activeDevice->fcb[unitNo]);
             position     = tp->currPos;
             tp->blockNo += 1;
-
-            /*
-            **  The following fseek makes fwrite behave as desired after an fread.
-            */
-            //fseek(activeDevice->fcb[unitNo], 0, SEEK_CUR);
 
             /*
             **  Write a TAP tape mark.
             */
             recLen1 = 0;
-            //fwrite(&recLen1, sizeof(recLen1), 1, activeDevice->fcb[unitNo]);
             memcpy(&tp->baseAddr[tp->currPos], &recLen1, sizeof(recLen1));
             tp->currPos += sizeof(recLen1);
             tp->fileMark = TRUE;
-
-            /*
-            **  The following fseek prepares for any subsequent fread.
-            */
-            //fseek(activeDevice->fcb[unitNo], 0, SEEK_CUR);
             }
 
         return (FcProcessed);
@@ -2190,20 +2227,12 @@ static void mt679FlushWrite(void)
         }
 
     /*
-    **  The following fseek makes fwrite behave as desired after an fread.
-    */
-    //fseek(fcb, 0, SEEK_CUR);
-
-    /*
     **  Write the TAP record.
     */
-    //fwrite(&recLen1, sizeof(recLen1), 1, fcb);
     memcpy(&tp->baseAddr[tp->currPos], &recLen1, sizeof(recLen1));
     tp->currPos += sizeof(recLen1);
-    //fwrite(&rawBuffer, 1, recLen0, fcb);
     memcpy(&tp->baseAddr[tp->currPos], &rawBuffer, recLen0);
     tp->currPos += recLen0;
-    //fwrite(&recLen1, sizeof(recLen1), 1, fcb);
     memcpy(&tp->baseAddr[tp->currPos], &recLen1, sizeof(recLen1));
     tp->currPos += sizeof(recLen1);
     tp->flushCount++;
@@ -2216,11 +2245,6 @@ static void mt679FlushWrite(void)
         msync(tp->baseAddr, tp->maxOffset + 1, MS_ASYNC);
         tp->flushCount =  0;
         }
-
-    /*
-    **  The following fseek prepares for any subsequent fread.
-    */
-    //fseek(fcb, 0, SEEK_CUR);
 
     /*
     **  Writing completed.
@@ -2365,13 +2389,11 @@ static void mt679FuncRead(void)
     /*
     **  Determine if the tape is at the load point.
     */
-    //position = ftell(activeDevice->fcb[unitNo]);
     position = tp->currPos;
 
     /*
     **  Read and verify TAP record length header.
     */
-    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen0)) <= tp->maxOffset)
         {
         len = 1;
@@ -2442,7 +2464,6 @@ static void mt679FuncRead(void)
     /*
     **  Read and verify the actual raw data.
     */
-    //len = (u32)fread(rawBuffer, 1, recLen1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + recLen1) <= tp->maxOffset)
         {
         len = recLen1;
@@ -2466,7 +2487,6 @@ static void mt679FuncRead(void)
     /*
     **  Read and verify the TAP record length trailer.
     */
-    //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
         {
         len = 1;
@@ -2504,7 +2524,6 @@ static void mt679FuncRead(void)
 
         if (recLen1 == ((recLen2 >> 8) & 0xFFFFFF))
             {
-            //fseek(activeDevice->fcb[unitNo], 1, SEEK_CUR);
             tp->currPos += 1;
             }
         else
@@ -2561,7 +2580,6 @@ static void mt679FuncReadBkw(void)
     /*
     **  Check if we are already at the beginning of the tape.
     */
-    //position = ftell(activeDevice->fcb[unitNo]);
     position = tp->currPos;
     if (position == 0)
         {
@@ -2576,9 +2594,6 @@ static void mt679FuncReadBkw(void)
     **  of the record (leaving the file position ahead of the just read
     **  record trailer).
     */
-    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
-    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
-    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
     if (tp->currPos > sizeof(recLen0))
         {
         tp->currPos -= sizeof(recLen0);
@@ -2634,21 +2649,17 @@ static void mt679FuncReadBkw(void)
     /*
     **  We are currently positioned ahead of the previous record trailer.
     */
-    //position -= 4;
     if (recLen1 != 0)
         {
         /*
         **  Skip backward over the TAP record trailer, body and header.
         */
-        //position -= 4 + recLen1;
-        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos -= (sizeof(recLen1) + recLen1 + sizeof(recLen1));
         position = tp->currPos;
 
         /*
         **  Read and verify the TAP record header.
         */
-        //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
         if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
             {
             len = 1;
@@ -2674,9 +2685,6 @@ static void mt679FuncReadBkw(void)
             /*
             **  This is more weird shit to deal with "padded" TAP records.
             */
-            //position -= 1;
-            //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
-            //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
             tp->currPos -= 1;
             if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
                 {
@@ -2702,7 +2710,6 @@ static void mt679FuncReadBkw(void)
         /*
         **  Read and verify the actual raw data.
         */
-        //len = (u32)fread(rawBuffer, 1, recLen1, activeDevice->fcb[unitNo]);
         if ((tp->currPos + recLen1) <= tp->maxOffset)
             {
             len = recLen1;
@@ -2726,7 +2733,6 @@ static void mt679FuncReadBkw(void)
         /*
         **  Position to the TAP record header.
         */
-        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos = position;
 
         /*
@@ -2794,13 +2800,11 @@ static void mt679FuncForespace(void)
     /*
     **  Determine if the tape is at the load point.
     */
-    //position = ftell(activeDevice->fcb[unitNo]);
     position = tp->currPos;
 
     /*
     **  Read and verify TAP record length header.
     */
-    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen0)) <= tp->maxOffset)
         {
         len = 1;
@@ -2872,7 +2876,6 @@ static void mt679FuncForespace(void)
     /*
     **  Skip the actual raw data.
     */
-    //if (fseek(activeDevice->fcb[unitNo], recLen1, SEEK_CUR) != 0)
     if ((tp->currPos + recLen1) > tp->maxOffset)
         {
         logDtError(LogErrorLocation, "channel %02o - short tape record read: %d", activeChannel->id, len);
@@ -2889,7 +2892,6 @@ static void mt679FuncForespace(void)
     /*
     **  Read and verify the TAP record length trailer.
     */
-    //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
     if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
         {
         len = 1;
@@ -2927,7 +2929,6 @@ static void mt679FuncForespace(void)
 
         if (recLen1 == ((recLen2 >> 8) & 0xFFFFFF))
             {
-            //fseek(activeDevice->fcb[unitNo], 1, SEEK_CUR);
             tp->currPos += 1;
             }
         else
@@ -2967,7 +2968,6 @@ static void mt679FuncBackspace(void)
     /*
     **  Check if we are already at the beginning of the tape.
     */
-    //position = ftell(activeDevice->fcb[unitNo]);
     position = tp->currPos;
     if (position == 0)
         {
@@ -2981,9 +2981,6 @@ static void mt679FuncBackspace(void)
     **  of the record (leaving the file position ahead of the just read
     **  record trailer).
     */
-    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
-    //len = (u32)fread(&recLen0, sizeof(recLen0), 1, activeDevice->fcb[unitNo]);
-    //fseek(activeDevice->fcb[unitNo], -4, SEEK_CUR);
     if (tp->currPos > sizeof(recLen0))
         {
         tp->currPos -= sizeof(recLen0);
@@ -3042,13 +3039,11 @@ static void mt679FuncBackspace(void)
         **  Skip backward over the TAP record body and header.
         */
         position -= 4 + recLen1;
-        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos = position;
 
         /*
         **  Read and verify the TAP record header.
         */
-        //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
         if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
             {
             len = 1;
@@ -3075,9 +3070,7 @@ static void mt679FuncBackspace(void)
             **  This is more weird shit to deal with "padded" TAP records.
             */
             position -= 1;
-            //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
             tp->currPos -= 1;
-            //len = (u32)fread(&recLen2, sizeof(recLen2), 1, activeDevice->fcb[unitNo]);
             if ((tp->currPos + sizeof(recLen2)) <= tp->maxOffset)
                 {
                 len = 1;
@@ -3102,7 +3095,6 @@ static void mt679FuncBackspace(void)
         /*
         **  Position to the TAP record header.
         */
-        //fseek(activeDevice->fcb[unitNo], position, SEEK_SET);
         tp->currPos = position;
         }
     else

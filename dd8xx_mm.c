@@ -434,6 +434,47 @@ void dd885Init_1(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
     }
 
 /*--------------------------------------------------------------------------
+**  Purpose:        Terminate All Devices on this DevSlot.
+**
+**  Parameters:     Name        Description.
+**                  ds          Device pointer.
+**
+**  Returns:        Nothing.
+**
+**------------------------------------------------------------------------*/
+void dd8xxTerminate(DevSlot *ds)
+    {
+    /*
+    **  Check and close out any mounted disks.
+    */
+    for (int unitNo = 0; unitNo < MaxUnits2; unitNo++)
+        {
+        if (ds->fcb[unitNo] != NULL)
+            {
+            /*
+            **  Close the file.
+            */
+            DiskParam *dp = (DiskParam *)ds->context[unitNo];
+            if (msync(dp->baseAddr, dp->maxOffset + 1, MS_SYNC) == -1)
+                {
+                logError(LogErrorLocation, "(dd8xx  ) Unit %d final synchronization failed code %d\n",
+                    unitNo, errno);
+                }
+            if (munmap(dp->baseAddr, dp->maxOffset + 1) == -1)
+                {
+                logError(LogErrorLocation, "(dd8xx  ) Unit %d final unmap failed code %d\n",
+                    unitNo, errno);
+                }
+            dp->maxOffset = 0;
+            dp->baseAddr = NULL;
+            dp->flushCount = 0;
+            fclose(ds->fcb[unitNo]);
+            ds->fcb[unitNo] = NULL;
+            }
+        }
+    }
+
+/*--------------------------------------------------------------------------
 **  Purpose:        Load a new disk (operator interface).
 **
 **  Parameters:     Name        Description.
@@ -774,6 +815,10 @@ static void dd8xxInit(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName, DiskSi
         case DiskType844:
             containerType = CtClassic;
             break;
+
+        default:
+            containerType = CtClassic;
+            break;
             }
         }
 
@@ -864,7 +909,7 @@ static void dd8xxInit(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName, DiskSi
 static FILE *dd8xxMount(char *deviceName, DiskParam *dp)
     {
     FILE      *fcb;
-    char      fname[MaxFSPath];
+    char      fname[MaxFSPath] = "\0";
     char      msg[MaxFSPath + 30];
     time_t    mTime;
     struct tm *lTime;

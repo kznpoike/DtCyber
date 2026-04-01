@@ -1,7 +1,7 @@
 /*--------------------------------------------------------------------------
 **
 **  Copyright (c) 2003-2011, Tom Hunter
-**                2025, John Huntley - Implement memory mapped file support
+**                2026, John Huntley - Implement memory mapped file support
 **
 **  Name: mt669.c
 **
@@ -556,6 +556,52 @@ void mt669Terminate(DevSlot *dp)
 
         fclose(cp->convFileHandle);
         cp->convFileHandle = NULL;
+        }
+
+    /*
+    **  Check and close out any mounted tapes.
+    */
+    for (int unitNo = 0; unitNo < MaxUnits2; unitNo++)
+        {
+        if (dp->fcb[unitNo] != NULL)
+            {
+            /*
+            **  Close the file.
+            */
+            TapeParam *tp = (TapeParam *)dp->context[unitNo];
+            if (msync(tp->baseAddr, tp->maxOffset + 1, MS_SYNC) == -1)
+                {
+                logError(LogErrorLocation, "(mt669  ) Unit %d final synchronization failed code %d\n",
+                    unitNo, errno);
+                }
+            if (munmap(tp->baseAddr, tp->maxOffset + 1) == -1)
+                {
+                logError(LogErrorLocation, "(mt669  ) Unit %d final unmap failed code %d\n",
+                    unitNo, errno);
+                }
+            if (tp->ringIn)
+                {
+                /*
+                **  Truncate the backing file to the actual size written.
+                */
+                if (ftruncate(fileno(dp->fcb[unitNo]), (tp->currPos + 1)) == -1)
+                    {
+                    logError(LogErrorLocation, "(mt669  ) Unit %d final truncate failed code %d\n",
+                        unitNo, errno);
+                    }
+                else
+                    {
+                    fflush(dp->fcb[unitNo]);
+                    logError(LogErrorLocation, "(mt669  ) Unit %d truncated to size %d\n",
+                        unitNo, tp->currPos + 1);
+                    }
+                }
+            tp->maxOffset = 0;
+            tp->baseAddr = NULL;
+            tp->flushCount = 0;
+            fclose(dp->fcb[unitNo]);
+            dp->fcb[unitNo] = NULL;
+            }
         }
     }
 

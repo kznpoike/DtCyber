@@ -424,6 +424,33 @@ void dd885Init_1(u8 eqNo, u8 unitNo, u8 channelNo, char *deviceName)
     }
 
 /*--------------------------------------------------------------------------
+**  Purpose:        Terminate All Devices on this DevSlot.
+**
+**  Parameters:     Name        Description.
+**                  ds          Device pointer.
+**
+**  Returns:        Nothing.
+**
+**------------------------------------------------------------------------*/
+void dd8xxTerminate(DevSlot *ds)
+    {
+    /*
+    **  Check and close out any mounted disks.
+    */
+    for (int unitNo = 0; unitNo < MaxUnits2; unitNo++)
+        {
+        if (ds->fcb[unitNo] != NULL)
+            {
+            /*
+            **  Close the file.
+            */
+            fclose(ds->fcb[unitNo]);
+            ds->fcb[unitNo] = NULL;
+            }
+        }
+    }
+
+/*--------------------------------------------------------------------------
 **  Purpose:        Load a new disk (operator interface).
 **
 **  Parameters:     Name        Description.
