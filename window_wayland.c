@@ -82,7 +82,7 @@
 #define FontCtrMedium    FontMedium / 2
 #define FontCtrLarge     FontLarge / 2
 #define DPI              75.0
-#define MaxPline         255
+#define MaxPline         511
 #define FrameTimesMax    20
 
 /*
@@ -586,10 +586,10 @@ allocateShmFile(size_t size)
 **                  to free the memory once finished with the string.
 **
 **------------------------------------------------------------------------*/
-static char *
+char *
 findFontFile(const char *fontFamily, const double pointSize)
     {
-    char *filePath;
+    char *filePath = NULL;
     FcConfig *config;
 
     config = FcInitLoadConfigAndFonts();
@@ -607,76 +607,67 @@ findFontFile(const char *fontFamily, const double pointSize)
     FcDefaultSubstitute(pat);
     FcConfigSubstitute(config, pat, FcMatchPattern);
     FcPattern* pat2 = FcFontMatch(config, pat, &res);
-    if (pat2)
-        {
-        FcFontSetAdd(fs, pat2);
-        }
     FcPatternDestroy(pat);
     if (res == FcResultMatch)
         {
         FcObjectSet* os = FcObjectSetBuild (FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE,
-            FC_FONTFORMAT, FC_SIZE, FC_PIXEL_SIZE, FC_SPACING, (char *) 0);
-        for (int i=0; fs && i < fs->nfont; ++i)
-            {
-            wayDebug(1, LogErrorLocation, "Processing font number %d of %d\n", i, fs->nfont);
-            FcPattern* font = FcPatternFilter(fs->fonts[i], os);
-            FcChar8 *file;
-            FcResult res1;
-            double size;
-            int spacing;
+        FC_FONTFORMAT, FC_SIZE, FC_PIXEL_SIZE, FC_SPACING, (char *) 0);
+        FcPattern* font = FcPatternFilter(pat2, os);
+        FcChar8 *file;
+        FcResult res1;
+        double size;
+        int spacing;
 
-            if (FcPatternGetString(font, FC_FAMILY, 0, &file) == FcResultMatch)
-                {
-                wayDebug(1, LogErrorLocation, "  Font family name: %s\n", (char *)file);
-                }
-            if (FcPatternGetString(font, FC_STYLE, 0, &file) == FcResultMatch)
-                {
-                wayDebug(1, LogErrorLocation, "  Font style: %s\n", (char *)file);
-                }
-            if (FcPatternGetString(font, FC_LANG, 0, &file) == FcResultMatch)
-                {
-                wayDebug(1, LogErrorLocation, "  Font language code: %s\n", (char *)file);
-                }
-            if (FcPatternGetString(font, FC_FONTFORMAT, 0, &file) == FcResultMatch)
-                {
-                wayDebug(1, LogErrorLocation, "  Font format: %s\n", (char *)file);
-                }
-            if ((res1 = FcPatternGetDouble(font, FC_SIZE, 0, &size)) == FcResultMatch)
-                {
-                wayDebug(1, LogErrorLocation, "  Font point size: %f\n", size);
-                }
-            else
-                {
-                wayDebug(1, LogErrorLocation, "  Attempt to get point size object returned %d\n", res1);
-                }
-            if ((res1 = FcPatternGetDouble(font, FC_PIXEL_SIZE, 0, &size)) == FcResultMatch)
-                {
-                wayDebug(1, LogErrorLocation, "  Font pixel size: %f\n", size);
-                }
-            else
-                {
-                wayDebug(1, LogErrorLocation, "  Attempt to get pixel size object returned %d\n", res1);
-                }
-            if ((res1 = FcPatternGetInteger(font, FC_SPACING, 0, &spacing)) == FcResultMatch)
-                {
-                wayDebug(1, LogErrorLocation, "  Font spacing: %d\n", spacing);
-                }
-            else
-                {
-                wayDebug(1, LogErrorLocation, "  Attempt to get spacing object returned %d\n", res1);
-                }
-            if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch)
-                {
-                /*------------------------------------------------------------------
-                ** When we destroy the font set below we loose the file path memory
-                ** so we need to allocate a new structure and copy here
-                **------------------------------------------------------------------*/
-                char *tmp = calloc(sizeof(char), strlen((char *)file)+1);
-                filePath = strcpy(tmp, (char *)file);
-                wayDebug(1, LogErrorLocation, "  Font file location: %s\n", filePath);
-                }
-            FcPatternDestroy(font);
+        if (FcPatternGetString(font, FC_FAMILY, 0, &file) == FcResultMatch)
+            {
+            wayDebug(1, LogErrorLocation, "  Font family name: %s\n", (char *)file);
             }
+        if (FcPatternGetString(font, FC_STYLE, 0, &file) == FcResultMatch)
+            {
+            wayDebug(1, LogErrorLocation, "  Font style: %s\n", (char *)file);
+            }
+        if (FcPatternGetString(font, FC_LANG, 0, &file) == FcResultMatch)
+            {
+            wayDebug(1, LogErrorLocation, "  Font language code: %s\n", (char *)file);
+            }
+        if (FcPatternGetString(font, FC_FONTFORMAT, 0, &file) == FcResultMatch)
+            {
+            wayDebug(1, LogErrorLocation, "  Font format: %s\n", (char *)file);
+            }
+        if ((res1 = FcPatternGetDouble(font, FC_SIZE, 0, &size)) == FcResultMatch)
+            {
+            wayDebug(1, LogErrorLocation, "  Font point size: %f\n", size);
+            }
+        else
+            {
+            wayDebug(1, LogErrorLocation, "  Attempt to get point size object returned %d\n", res1);
+            }
+        if ((res1 = FcPatternGetDouble(font, FC_PIXEL_SIZE, 0, &size)) == FcResultMatch)
+            {
+            wayDebug(1, LogErrorLocation, "  Font pixel size: %f\n", size);
+            }
+        else
+            {
+            wayDebug(1, LogErrorLocation, "  Attempt to get pixel size object returned %d\n", res1);
+            }
+        if ((res1 = FcPatternGetInteger(font, FC_SPACING, 0, &spacing)) == FcResultMatch)
+            {
+            wayDebug(1, LogErrorLocation, "  Font spacing: %d\n", spacing);
+            }
+        else
+            {
+            wayDebug(1, LogErrorLocation, "  Attempt to get spacing object returned %d\n", res1);
+            }
+        if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch)
+            {
+            /*------------------------------------------------------------------
+            ** When we destroy the font set below we loose the file path memory
+            ** so we need to allocate a new structure and copy here
+            **------------------------------------------------------------------*/
+            filePath = strdup((char *)file);
+            wayDebug(1, LogErrorLocation, "  Font file location: %s\n", filePath);
+            }
+        FcPatternDestroy(font);
         FcObjectSetDestroy(os);
         }
     else
@@ -684,9 +675,9 @@ findFontFile(const char *fontFamily, const double pointSize)
         logDtError(LogErrorLocation, "  Attempt to locate font file returned %d\n", res);
         filePath = NULL;
         }
-    FcPatternDestroy(pat2);
-    FcFontSetDestroy(fs);
-    FcConfigDestroy(config);
+    /*
+    **  Clean up all allocated structures
+    */
     FcFini();
     return filePath;
     }
@@ -718,7 +709,7 @@ allocateKeyBuff(WlClientState *state, int size)
         **/
         return;
         }
-    state->keyBuf = calloc(sizeof(xkb_keysym_t), size);
+    state->keyBuf = calloc(size, sizeof(xkb_keysym_t));
     state->keyBufMax = size;
     state->keyBufIn = 0;
     state->keyBufOut = 0;
@@ -1037,7 +1028,7 @@ populateYOffsetMap(WlClientState *state)
         state->offsetMapY[y] = (u16)(roundf(factor * (y * 1.0)));
         if ((y < 11) || (y >= (MaxY - 10)))
             {
-            wayDebug(1, LogErrorLocation, "Populated mapping for line = %d as %d.\n",
+            wayDebug(3, LogErrorLocation, "Populated mapping for line = %d as %d.\n",
             y, state->offsetMapY[y]);
             }
         }
@@ -1920,11 +1911,8 @@ drawText(WlClientState *state)
         **------------------------------------------------------------------------*/
         pthread_mutex_lock(&mutexDisplay);
 
-        curr = display;
         end  = display + listEnd;
 
-        wayDebug(2, LogErrorLocation, "drawText about to process the display list at 0x%x ending 0x%x\n",
-            curr, end);
         for (curr = display; curr < end; curr++)
             {
             /*--------------------------------------------------------------------------
@@ -2299,14 +2287,14 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     frameTimesNdx++;
     if (frameTimesNdx == FrameTimesMax)
         {
-        if (debugWayland > 0)
+        if (debugWayland > 2)
             {
-            wayDebug(1, LogErrorLocation, "Frame refresh time stamps current %10u last %10u:\n",
+            wayDebug(3, LogErrorLocation, "Frame refresh time stamps current %10u last %10u:\n",
                 time, state->lastFrame);
-	    wayDebug(1, LogErrorLocation, "%10u %10u %10u %10u %10u %10u %10u %10u %10u %10u\n",
+	    wayDebug(3, LogErrorLocation, "%10u %10u %10u %10u %10u %10u %10u %10u %10u %10u\n",
                 frameTimes[0], frameTimes[1], frameTimes[2], frameTimes[3], frameTimes[4],
                 frameTimes[5], frameTimes[6], frameTimes[7], frameTimes[8], frameTimes[9]);
-	    wayDebug(1, LogErrorLocation, "%10u %10u %10u %10u %10u %10u %10u %10u %10u %10u\n",
+	    wayDebug(3, LogErrorLocation, "%10u %10u %10u %10u %10u %10u %10u %10u %10u %10u\n",
                 frameTimes[10], frameTimes[11], frameTimes[12], frameTimes[13], frameTimes[14],
                 frameTimes[15], frameTimes[16], frameTimes[17], frameTimes[18], frameTimes[19]);
             }
@@ -2348,15 +2336,14 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **------------------------------------------------------------------------*/
     uint32_t delay = time - state->lastFrame;
     uint32_t waitTime = 20 - delay;
-    if ((waitTime > 0) && (waitTime < 1000))
+    if ((waitTime > 0) && (waitTime < 100))
         {
-        wayDebug(1, LogErrorLocation, "Waiting for %ums\n", waitTime);
-        //fprintf(stderr, "Waiting for %ums\n", waitTime);
+        wayDebug(3, LogErrorLocation, "Waiting for %ums\n", waitTime);
         struct timespec tr;
         struct timespec ts;
         ts.tv_sec  = waitTime / 1000;
         ts.tv_nsec = (waitTime % 1000) * 1000000;
-        wayDebug(1, LogErrorLocation, "Timespec tv_sec = %d, tv_nsec = %d\n",
+        wayDebug(3, LogErrorLocation, "Timespec tv_sec = %d, tv_nsec = %d\n",
             ts.tv_sec, ts.tv_nsec);
         int ns = nanosleep(&ts, &tr);
         if ( (ns == -1) && (errno == EINTR))
@@ -2487,14 +2474,16 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **------------------------------------------------------------------------*/
     if (state->image != NULL && state->fadePixels)
         {
-        float shiftF = ceilf((((time - state->lastFrame) * 1.0) / 40.0));
-        uint32_t shiftCnt = (uint32_t)shiftF & 0xFF;
+        float shiftF = ceilf(((delay * 1.0) / 40.0));
+        uint32_t shiftCnt = (uint32_t)shiftF & 07;
         int height = state->height;
         int width = state->width;
         for (int y = 0; y < height; ++y)
             {
             for (int x = 0; x < width; ++x)
                 {
+                state->image[y * width + x].red = state->image[y * width + x].red >> shiftCnt;
+                state->image[y * width + x].blue = state->image[y * width + x].blue >> shiftCnt;
                 state->image[y * width + x].green = state->image[y * width + x].green >> shiftCnt;
                 }
              }
@@ -3419,7 +3408,6 @@ loadDtCyberFont(WlClientState *state, int ndx, char *fontFamily,
     {
     if ((ndx < 0) || (ndx >= MAXFONTS))
         {
-        initDtCyberFont(state, ndx);
         return false;
         }
 
@@ -3646,6 +3634,11 @@ void *windowThread(void *param)
     state.zxdgDecorationManagerV1 = NULL;
     wayDebug(2, LogErrorLocation, "windowThread calling wl_display_connect\n");
     state.wlDisplay = wl_display_connect(NULL);
+    if (state.wlDisplay == NULL)
+        {
+        logDtError(LogErrorLocation, "Unable to connect to Wayland display.");
+        exit(1);
+        }
     wayDebug(2, LogErrorLocation, "windowThread done wl_display_connect\n");
     wayDebug(2, LogErrorLocation, "windowThread calling wl_display_get_registry\n");
     state.wlRegistry = wl_display_get_registry(state.wlDisplay);
