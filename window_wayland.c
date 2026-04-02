@@ -212,8 +212,8 @@ typedef struct wlClientState
     int currFontNdx;
     FT_Library library;
     /* Frame buffer proxessing */
+    int fadePixels;
     WlContentBuffer buffers[MAXBUFFERS];
-    bool fadePixels;
     int maxBuffers;
     u16 offsetMapY[MaxY+1];
     } WlClientState;
@@ -2335,7 +2335,7 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
     **  maximum delay of 1000ms. This should be reasonable to any usage.
     **------------------------------------------------------------------------*/
     uint32_t delay = time - state->lastFrame;
-    uint32_t waitTime = 20 - delay;
+    int32_t  waitTime = 20 - delay;
     if ((waitTime > 0) && (waitTime < 100))
         {
         wayDebug(3, LogErrorLocation, "Waiting for %ums\n", waitTime);
@@ -2468,14 +2468,25 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
 
     /*--------------------------------------------------------------------------
     **  The original console hardware used a CRT screen, which is not persistent.
-    **  To try and emulate this behavior we fade the image buffer by 75% on
-    **  each frame update and rely on the PPU refresh processing to repaint
-    **  the needed information.
+    **  According to CDC manual number 62952600 (Cyber 170 Display Station
+    **  CC545-C/D/E/F Hardware Reference) the original console required frame
+    **  refreshing at the rate of 50Hz but discourages faster refresh rates,
+    **  so we assume that the phosphor display time is about 20ms.
+    ** 
+    **  To try and emulate this behavior we fade the image buffer and rely on
+    **  the PPU refresh processing to repaint the needed information.
     **------------------------------------------------------------------------*/
-    if (state->image != NULL && state->fadePixels)
+    if ((state->image != NULL) && (state->fadePixels > 2))
         {
-        float shiftF = ceilf(((delay * 1.0) / 40.0));
-        uint32_t shiftCnt = (uint32_t)shiftF & 07;
+        uint32_t shiftCnt = 0;
+	if (waitTime < 0)
+            {
+            shiftCnt = 8;
+            }
+        else
+            {
+            shiftCnt = 1;
+            }
         int height = state->height;
         int width = state->width;
         for (int y = 0; y < height; ++y)
@@ -2487,8 +2498,9 @@ wlSurfaceFrameDone(void *data, struct wl_callback *cb, uint32_t time)
                 state->image[y * width + x].green = state->image[y * width + x].green >> shiftCnt;
                 }
              }
+	state->fadePixels = -1;
         }
-    state->fadePixels = !state->fadePixels;
+    state->fadePixels++;
     /*--------------------------------------------------------------------------
     **  Prepare the next frame image by processing the incoming display list
     **  from the PPU.
@@ -3650,7 +3662,7 @@ void *windowThread(void *param)
     state.wlDataDevice = NULL;
     state.pasteActive = false;
     state.ddOfferedTextPlain = false;
-    state.fadePixels = false;
+    state.fadePixels = 0;;
     state.lastFrame = 0;
 
     wayDebug(1, LogErrorLocation, "windowThread initial state setup done\n");
